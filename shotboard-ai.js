@@ -619,7 +619,6 @@
         }
         return;
       }
-      aiReferenceInputEl?.click();
     });
 
     aiReferenceDropzoneEl?.addEventListener("keydown", (event) => {
