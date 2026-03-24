@@ -1,0 +1,3045 @@
+(function enhanceShotBoard() {
+  const LEFT_SIDEBAR_SECTION_STORAGE_KEY = "shotboard-left-sidebar-sections-v3";
+  const RIGHT_SIDEBAR_SECTION_STORAGE_KEY = "shotboard-right-sidebar-sections-v3";
+  const LEFT_RAIL_COLLAPSED_STORAGE_KEY = "shotboard-left-rail-collapsed-v1";
+  const RIGHT_RAIL_COLLAPSED_STORAGE_KEY = "shotboard-right-rail-collapsed-v1";
+  const AI_REFERENCE_IMAGES_STORAGE_KEY = "shotboard-ai-reference-images-v1";
+  const AI_REFERENCE_DB_NAME = "shotboard-ai-reference-db-v1";
+  const AI_REFERENCE_DB_STORE_NAME = "reference-images";
+  const AI_REFERENCE_DB_RECORD_KEY = "active-project";
+  const AI_REFERENCE_IMAGE_LIMIT = 10;
+
+  const aiBriefInputEl = document.getElementById("aiBriefInput");
+  const aiModelInputEl = document.getElementById("aiModelInput");
+  const aiCutCountOutputEl = document.getElementById("aiCutCountOutput");
+  const aiPlanMetaEl = document.getElementById("aiPlanMeta");
+  const aiGenerationIndicatorEl = document.getElementById("aiGenerationIndicator");
+  const aiGenerationStageEl = document.getElementById("aiGenerationStage");
+  const aiGenerationHintEl = document.getElementById("aiGenerationHint");
+  const aiReferenceDropzoneEl = document.getElementById("aiReferenceDropzone");
+  const aiReferenceInputEl = document.getElementById("aiReferenceInput");
+  const aiReferenceInlineGridEl = document.getElementById("aiReferenceInlineGrid");
+  const aiReferenceListEl = document.getElementById("aiReferenceList");
+  const aiReferenceCountEl = document.getElementById("aiReferenceCount");
+  const referenceLightboxEl = document.getElementById("referenceLightbox");
+  const referenceLightboxBackdropEl = document.getElementById("referenceLightboxBackdrop");
+  const referenceLightboxCloseEl = document.getElementById("referenceLightboxClose");
+  const referenceLightboxImageEl = document.getElementById("referenceLightboxImage");
+  const referenceLightboxMetaEl = document.getElementById("referenceLightboxMeta");
+  const referenceLightboxTitleEl = document.getElementById("referenceLightboxTitle");
+  const aiReferenceWeightInputEl = document.getElementById("aiReferenceWeightInput");
+  const aiSummaryOutputEl = document.getElementById("aiSummaryOutput");
+  const aiSequenceOutputEl = document.getElementById("aiSequenceOutput");
+  const selectionDetailOutputEl = document.getElementById("selectionDetailOutput");
+  const generatePlanButtonEl = document.getElementById("generatePlanButton");
+  const generatePlanButtonLabelEl = document.getElementById("generatePlanButtonLabel");
+  const regenerateSelectionButtonEl = document.getElementById("regenerateSelectionButton");
+  const importWorkspaceInputEl = document.getElementById("importWorkspaceInput");
+  const exportWorkspaceButtonEl = document.getElementById("exportWorkspaceButton");
+  const workspaceMainEl = document.querySelector(".workspace-main");
+  const workspaceStageEl = document.querySelector(".workspace-stage");
+  const workspaceOverlayEl = document.getElementById("workspaceOverlay");
+  const leftRailEl = document.getElementById("leftSidebarRail");
+  const rightRailEl = document.getElementById("rightSidebarRail");
+  const leftRailToggleButtonEl = document.getElementById("leftRailToggleButton");
+  const rightRailToggleButtonEl = document.getElementById("rightRailToggleButton");
+  const projectSidebarEl = document.getElementById("projectSidebar");
+  const previewSidebarEl = document.getElementById("previewSidebar");
+  const leftRailButtons = Array.from(document.querySelectorAll('.sidebar-rail-button[data-sidebar-side="left"]'));
+  const rightRailButtons = Array.from(document.querySelectorAll('.sidebar-rail-button[data-sidebar-side="right"]'));
+  const togglePreviewButtonEl = document.getElementById("togglePreviewButton");
+  const togglePreviewLabelEl = document.getElementById("togglePreviewLabel");
+  const previewVideoUrlInputEl = document.getElementById("previewVideoUrlInput");
+  const previewPosterUrlInputEl = document.getElementById("previewPosterUrlInput");
+  const previewVideoEl = document.getElementById("previewVideo");
+  const previewVideoEmptyEl = document.getElementById("previewVideoEmpty");
+  const connectionLayerEl = document.getElementById("connectionLayer");
+  const aiSidebarCardEl = projectSidebarEl?.querySelector('[data-sidebar-section="ai"]');
+  const leftSidebarSections = Array.from(projectSidebarEl?.querySelectorAll("[data-sidebar-section]") ?? []);
+  const rightSidebarSections = Array.from(previewSidebarEl?.querySelectorAll("[data-sidebar-section]") ?? []);
+
+  if (!aiBriefInputEl || !projectSidebarEl || !previewSidebarEl || !connectionLayerEl) {
+    return;
+  }
+
+  const originalGetDefaultProject = getDefaultProject;
+  const originalNormalizeProject = normalizeProject;
+  const originalCloneProject = cloneProject;
+  const originalCreateEmptyPanel = createEmptyPanel;
+  const originalNormalizePanel = normalizePanel;
+  const originalRenderProjectSidebar = renderProjectSidebar;
+  const originalCreatePanelElement = createPanelElement;
+  const originalRenderPanels = renderPanels;
+  const originalUpdateCanvasMetrics = updateCanvasMetrics;
+  const originalUpdatePanel = updatePanel;
+  const originalCreateHistorySnapshot = createHistorySnapshot;
+  const originalRestoreHistorySnapshot = restoreHistorySnapshot;
+
+  let aiGenerating = false;
+  let aiGenerationStageIndex = 0;
+  let aiGenerationIntervalId = null;
+  let aiReferenceImages = loadAiReferenceImages();
+  let aiReferenceStoragePromise = null;
+  let linkState = null;
+  let activeLeftSidebarSections = loadSidebarSections("left");
+  let activeRightSidebarSections = loadSidebarSections("right");
+  let leftRailCollapsed = loadRailCollapsed("left");
+  let rightRailCollapsed = loadRailCollapsed("right");
+  let draggedReferenceImageId = "";
+
+  getDefaultProject = function overrideDefaultProject() {
+    return {
+      ...originalGetDefaultProject(),
+      aiBrief: "",
+      aiModel: "Gemini 2.5 Flash",
+      referenceWeight: "2.0",
+      aiSummary: "",
+      previewVideoUrl: "",
+      previewPosterUrl: ""
+    };
+  };
+
+  normalizeProject = function overrideNormalizeProject(candidate) {
+    const base = originalNormalizeProject(candidate);
+    return {
+      ...base,
+      aiBrief: typeof candidate?.aiBrief === "string" ? candidate.aiBrief : "",
+      aiModel: typeof candidate?.aiModel === "string" && candidate.aiModel ? candidate.aiModel : "Gemini 2.5 Flash",
+      referenceWeight: sanitizeReferenceWeight(candidate?.referenceWeight),
+      aiSummary: typeof candidate?.aiSummary === "string" ? candidate.aiSummary : "",
+      previewVideoUrl: typeof candidate?.previewVideoUrl === "string" ? candidate.previewVideoUrl : "",
+      previewPosterUrl: typeof candidate?.previewPosterUrl === "string" ? candidate.previewPosterUrl : ""
+    };
+  };
+
+  cloneProject = function overrideCloneProject(projectValue = project) {
+    return {
+      ...originalCloneProject(projectValue),
+      aiBrief: projectValue.aiBrief ?? "",
+      aiModel: projectValue.aiModel ?? "Gemini 2.5 Flash",
+      referenceWeight: sanitizeReferenceWeight(projectValue.referenceWeight),
+      aiSummary: projectValue.aiSummary ?? "",
+      previewVideoUrl: projectValue.previewVideoUrl ?? "",
+      previewPosterUrl: projectValue.previewPosterUrl ?? ""
+    };
+  };
+
+  createEmptyPanel = function overrideCreateEmptyPanel(overrides = {}) {
+    return originalCreateEmptyPanel({
+      sceneTitle: "",
+      durationLabel: "",
+      viewMode: "image",
+      t2iCollapsed: false,
+      i2vCollapsed: false,
+      referenceImageId: "",
+      referenceImageName: "",
+      t2iPrompt: "",
+      i2vStartPrompt: "",
+      i2vMotionPrompt: "",
+      i2vEndPrompt: "",
+      nextPanelIds: [],
+      ...overrides
+    });
+  };
+
+  normalizePanel = function overrideNormalizePanel(panel, index) {
+    const base = originalNormalizePanel(panel, index);
+    return {
+      ...base,
+      sceneTitle: typeof panel?.sceneTitle === "string" ? panel.sceneTitle : "",
+      durationLabel: typeof panel?.durationLabel === "string" ? panel.durationLabel : "",
+      viewMode: ["image", "t2i", "i2v"].includes(panel?.viewMode)
+        ? panel.viewMode
+        : panel?.viewMode === "i2t"
+          ? "t2i"
+          : "image",
+      t2iCollapsed: Boolean(panel?.t2iCollapsed),
+      i2vCollapsed: Boolean(panel?.i2vCollapsed),
+      referenceImageId: typeof panel?.referenceImageId === "string" ? panel.referenceImageId : "",
+      referenceImageName: typeof panel?.referenceImageName === "string" ? panel.referenceImageName : "",
+      t2iPrompt: typeof panel?.t2iPrompt === "string" ? panel.t2iPrompt : "",
+      i2vStartPrompt: typeof panel?.i2vStartPrompt === "string" ? panel.i2vStartPrompt : "",
+      i2vMotionPrompt: typeof panel?.i2vMotionPrompt === "string" ? panel.i2vMotionPrompt : "",
+      i2vEndPrompt: typeof panel?.i2vEndPrompt === "string" ? panel.i2vEndPrompt : "",
+      nextPanelIds: Array.isArray(panel?.nextPanelIds) ? panel.nextPanelIds.filter((value) => typeof value === "string") : []
+    };
+  };
+
+  createHistorySnapshot = function overrideCreateHistorySnapshot() {
+    return {
+      ...originalCreateHistorySnapshot(),
+      aiReferenceImages: aiReferenceImages.map((image) => ({ ...image }))
+    };
+  };
+
+  restoreHistorySnapshot = function overrideRestoreHistorySnapshot(snapshot) {
+    aiReferenceImages = Array.isArray(snapshot?.aiReferenceImages)
+      ? snapshot.aiReferenceImages.filter((image) => typeof image?.dataUrl === "string").slice(0, AI_REFERENCE_IMAGE_LIMIT)
+      : [];
+
+    originalRestoreHistorySnapshot(snapshot);
+    persistAiReferenceImages();
+    renderAiReferenceImages();
+  };
+
+  renderProjectSidebar = function overrideRenderProjectSidebar() {
+    originalRenderProjectSidebar();
+    aiBriefInputEl.value = project.aiBrief ?? "";
+    aiModelInputEl.value = project.aiModel ?? "Gemini 2.5 Flash";
+    if (aiReferenceWeightInputEl) {
+      aiReferenceWeightInputEl.value = sanitizeReferenceWeight(project.referenceWeight);
+    }
+    renderAiReferenceImages();
+    renderAiOutputs();
+    renderPreviewSidebar();
+  };
+
+  updatePanel = function overrideUpdatePanel(panelId, updates, options = {}) {
+    originalUpdatePanel(panelId, updates, options);
+    if (options.rerender === false) {
+      renderAiOutputs();
+      renderSelectionDetail();
+    }
+  };
+
+  duplicatePanels = function overrideDuplicatePanels(panelIds) {
+    const ids = panelIds.filter(Boolean);
+    if (ids.length === 0) {
+      return;
+    }
+
+    const sourcePanels = panels.filter((panel) => ids.includes(panel.id));
+    if (sourcePanels.length === 0) {
+      return;
+    }
+
+    pushHistoryState();
+    const zBase = getNextZIndex();
+    const idMap = new Map(sourcePanels.map((panel) => [panel.id, createId()]));
+    const baseLength = panels.length;
+    const clones = sourcePanels.map((panel, index) =>
+      normalizePanel(
+        {
+          ...panel,
+          id: idMap.get(panel.id),
+          x: clamp(panel.x + NEW_PANEL_OFFSET, PANEL_MARGIN, Math.max(PANEL_MARGIN, canvasWidth - PANEL_WIDTH - PANEL_MARGIN)),
+          y: clamp(panel.y + NEW_PANEL_OFFSET, PANEL_SAFE_TOP, Math.max(PANEL_SAFE_TOP, canvasHeight - 220)),
+          z: zBase + index,
+          nextPanelIds: (panel.nextPanelIds ?? []).map((nextId) => idMap.get(nextId)).filter(Boolean)
+        },
+        baseLength + index
+      )
+    );
+
+    panels = [...panels, ...clones];
+    setSelection(clones.map((panel) => panel.id));
+    persistPanels();
+    updateHistoryUI();
+    renderPanels();
+    focusPanel(clones[0].id);
+    setStatus(clones.length > 1 ? "선택한 카드를 복제했습니다." : "카드를 복제했습니다.");
+  };
+
+  deletePanels = function overrideDeletePanels(panelIds) {
+    const ids = panelIds.filter(Boolean);
+    if (ids.length === 0) {
+      return;
+    }
+
+    const deleteSet = new Set(ids);
+    if (linkState && (deleteSet.has(linkState.sourceId) || deleteSet.has(linkState.targetId))) {
+      cleanupLinkDrag(false);
+    }
+
+    pushHistoryState();
+    const nextPanels = panels
+      .filter((panel) => !deleteSet.has(panel.id))
+      .map((panel, index) =>
+        normalizePanel(
+          {
+            ...panel,
+            nextPanelIds: (panel.nextPanelIds ?? []).filter((nextId) => !deleteSet.has(nextId))
+          },
+          index
+        )
+      );
+
+    panels = nextPanels.length > 0 ? nextPanels : [createEmptyPanel({ ...getSpawnPosition(), z: 1 })];
+    selectedPanelIds.clear();
+    persistPanels();
+    updateHistoryUI();
+    renderPanels();
+    setStatus(ids.length > 1 ? "선택한 카드를 삭제했습니다." : "카드를 삭제했습니다.");
+  };
+
+  createPanelElement = function overrideCreatePanelElement(panel, index) {
+    const fragment = originalCreatePanelElement(panel, index);
+    const card = fragment.querySelector(".story-card");
+    const sceneLabelEl = fragment.querySelector(".panel-scene-label");
+    const titleEl = fragment.querySelector(".panel-title");
+    const durationEl = fragment.querySelector(".panel-duration");
+    const nextCountEl = fragment.querySelector(".panel-next-count");
+    const viewButtons = fragment.querySelectorAll(".media-view-button");
+    const mediaPanels = fragment.querySelectorAll(".media-panel");
+    const t2iInput = fragment.querySelector(".t2i-prompt-input");
+    const i2vStartInput = fragment.querySelector(".i2v-start-input");
+    const i2vMotionInput = fragment.querySelector(".i2v-motion-input");
+    const i2vEndInput = fragment.querySelector(".i2v-end-input");
+    const referenceBookmarkEl = fragment.querySelector(".reference-bookmark");
+    const referenceBookmarkThumbEl = fragment.querySelector(".reference-bookmark-thumb");
+    const referenceBookmarkNameEl = fragment.querySelector(".reference-bookmark-name");
+    const inputPort = fragment.querySelector(".node-port--in");
+    const outputPort = fragment.querySelector(".node-port--out");
+    const clearLinksButton = fragment.querySelector(".clear-links-button");
+    const promptToggleButtons = fragment.querySelectorAll(".prompt-toggle-button");
+    const promptPanels = fragment.querySelectorAll(".prompt-panel");
+
+    sceneLabelEl.textContent = `씬 ${String(index + 1).padStart(2, "0")}`;
+    titleEl.textContent = panel.sceneTitle || `컷 ${index + 1}`;
+    durationEl.textContent = panel.durationLabel || "";
+    durationEl.hidden = !panel.durationLabel;
+    nextCountEl.textContent = String(panel.nextPanelIds.length);
+    t2iInput.value = panel.t2iPrompt;
+    i2vStartInput.value = panel.i2vStartPrompt;
+    i2vMotionInput.value = panel.i2vMotionPrompt;
+    i2vEndInput.value = panel.i2vEndPrompt;
+    syncMediaView(panel, viewButtons, mediaPanels);
+    syncPromptPanels(panel, promptPanels);
+    card.classList.toggle("is-link-source", linkState?.sourceId === panel.id);
+    card.classList.toggle("is-link-target", linkState?.targetId === panel.id);
+
+    const referenceImage = getReferenceImageById(panel.referenceImageId);
+    if (referenceBookmarkEl && referenceBookmarkNameEl) {
+      referenceBookmarkEl.classList.remove("is-clickable");
+      referenceBookmarkEl.removeAttribute("role");
+      referenceBookmarkEl.removeAttribute("tabindex");
+      referenceBookmarkEl.removeAttribute("aria-label");
+      if (referenceImage) {
+        referenceBookmarkEl.hidden = false;
+        referenceBookmarkEl.classList.add("is-clickable");
+        referenceBookmarkEl.setAttribute("role", "button");
+        referenceBookmarkEl.setAttribute("tabindex", "0");
+        referenceBookmarkEl.setAttribute("aria-label", `${titleEl.textContent} 레퍼런스 이미지 확대 보기`);
+        referenceBookmarkNameEl.textContent = referenceImage.name || panel.referenceImageName || "연결된 레퍼런스";
+        if (referenceBookmarkThumbEl) {
+          referenceBookmarkThumbEl.hidden = false;
+          referenceBookmarkThumbEl.src = referenceImage.dataUrl;
+          referenceBookmarkThumbEl.alt = `${titleEl.textContent} 레퍼런스 이미지`;
+        }
+        const openBookmarkPreview = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openReferenceLightbox(referenceImage, referenceImage.name || titleEl.textContent);
+        };
+        referenceBookmarkEl.addEventListener("click", openBookmarkPreview);
+        referenceBookmarkEl.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+          openBookmarkPreview(event);
+        });
+      } else if (panel.referenceImageName) {
+        referenceBookmarkEl.hidden = false;
+        referenceBookmarkNameEl.textContent = panel.referenceImageName;
+        if (referenceBookmarkThumbEl) {
+          referenceBookmarkThumbEl.hidden = true;
+          referenceBookmarkThumbEl.removeAttribute("src");
+          referenceBookmarkThumbEl.alt = "";
+        }
+      } else {
+        referenceBookmarkEl.hidden = true;
+        if (referenceBookmarkThumbEl) {
+          referenceBookmarkThumbEl.hidden = true;
+          referenceBookmarkThumbEl.removeAttribute("src");
+          referenceBookmarkThumbEl.alt = "";
+        }
+      }
+    }
+
+    if (inputPort) {
+      inputPort.dataset.panelId = panel.id;
+      inputPort.classList.toggle("is-active", linkState?.targetId === panel.id);
+      inputPort.setAttribute("aria-label", `${titleEl.textContent}로 연결 받기`);
+      inputPort.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    }
+
+    if (outputPort) {
+      outputPort.dataset.panelId = panel.id;
+      outputPort.classList.toggle("is-active", linkState?.sourceId === panel.id);
+      outputPort.setAttribute("aria-label", `${titleEl.textContent}에서 다음 컷 연결 시작`);
+      outputPort.addEventListener("pointerdown", (event) => {
+        if (spacePressed || event.button !== 0) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        startLinkDrag(event, panel.id);
+      });
+    }
+
+    if (clearLinksButton) {
+      clearLinksButton.hidden = panel.nextPanelIds.length === 0;
+      clearLinksButton.addEventListener("click", () => {
+        clearPanelConnections(panel.id);
+      });
+    }
+
+    promptToggleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const kind = button.dataset.promptKind;
+        const fieldName = getPromptCollapsedField(kind);
+        if (!fieldName) {
+          return;
+        }
+
+        updatePanel(panel.id, { [fieldName]: !panel[fieldName] }, { announce: false });
+        setStatus(`${titleEl.textContent} ${kind.toUpperCase()} 패널을 ${panel[fieldName] ? "펼쳤습니다" : "접었습니다"}.`);
+      });
+    });
+
+    viewButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        if (panel.viewMode === button.dataset.view) {
+          return;
+        }
+
+        pushHistoryState();
+        updatePanel(panel.id, { viewMode: button.dataset.view }, { announce: false });
+        setStatus(`${titleEl.textContent} 보기 모드를 전환했습니다.`);
+      });
+    });
+
+    bindPanelPromptInput(t2iInput, panel.id, "t2iPrompt", `panel-t2i:${panel.id}`);
+    bindPanelPromptInput(i2vStartInput, panel.id, "i2vStartPrompt", `panel-i2v-start:${panel.id}`);
+    bindPanelPromptInput(i2vMotionInput, panel.id, "i2vMotionPrompt", `panel-i2v-motion:${panel.id}`);
+    bindPanelPromptInput(i2vEndInput, panel.id, "i2vEndPrompt", `panel-i2v-end:${panel.id}`);
+
+    return fragment;
+  };
+
+  renderPanels = function overrideRenderPanels(options = {}) {
+    originalRenderPanels(options);
+    renderConnections();
+    renderAiReferenceImages();
+    renderAiOutputs();
+    renderSelectionDetail();
+  };
+
+  updateCanvasMetrics = function overrideUpdateCanvasMetrics() {
+    originalUpdateCanvasMetrics();
+    syncConnectionLayer();
+    renderConnections();
+  };
+
+  bindProjectField(aiBriefInputEl, "aiBrief");
+  bindProjectField(aiModelInputEl, "aiModel");
+  bindProjectField(aiReferenceWeightInputEl, "referenceWeight");
+  bindProjectField(previewVideoUrlInputEl, "previewVideoUrl");
+  bindProjectField(previewPosterUrlInputEl, "previewPosterUrl");
+
+  generatePlanButtonEl.addEventListener("click", handleGeneratePlan);
+  regenerateSelectionButtonEl?.addEventListener("click", handleRegenerateSelectedPanels);
+  importWorkspaceInputEl?.addEventListener("change", handleImportWorkspaceInputChange);
+  togglePreviewButtonEl?.addEventListener("click", () => {
+    setSidebarSections("right", activeRightSidebarSections.length > 0 ? [] : ["video"], false);
+  });
+  window.addEventListener("keydown", handleLinkKeyDown);
+  initializeSidebarRails();
+  initializeReferenceImages();
+
+  window.ShonodeWorkspaceBridge = {
+    ...(window.ShonodeWorkspaceBridge || {}),
+    exportWorkspace: handleExportWorkspace,
+    importWorkspace: importWorkspaceSnapshot,
+    regenerateSelected: handleRegenerateSelectedPanels
+  };
+
+  document.body.classList.remove("is-sidebar-collapsed", "is-preview-collapsed");
+  project = normalizeProject(project);
+  panels = panels.map((panel, index) => normalizePanel(panel, index));
+  renderProjectSidebar();
+  applySidebarRailState(false);
+  syncConnectionLayer();
+  renderPanels({ restoreView: true });
+
+  function bindProjectField(element, fieldName) {
+    if (!element) {
+      return;
+    }
+
+    const historyKey = `project:${fieldName}`;
+    element.addEventListener("input", () => {
+      captureHistoryGroup(historyKey);
+      const nextValue = fieldName === "referenceWeight"
+        ? sanitizeReferenceWeight(element.value)
+        : element.value;
+      updateProject({ [fieldName]: nextValue }, { announce: false });
+      if (fieldName === "previewVideoUrl" || fieldName === "previewPosterUrl") {
+        renderPreviewVideo();
+      } else {
+        renderAiOutputs();
+      }
+    });
+
+    element.addEventListener("blur", () => {
+      releaseHistoryGroup(historyKey);
+    });
+  }
+
+  function bindPanelPromptInput(element, panelId, fieldName, historyKey) {
+    element.addEventListener("input", () => {
+      captureHistoryGroup(historyKey);
+      updatePanel(panelId, { [fieldName]: element.value }, { announce: false, rerender: false });
+    });
+
+    element.addEventListener("blur", () => {
+      releaseHistoryGroup(historyKey);
+    });
+  }
+
+  function initializeSidebarRails() {
+    [...leftRailButtons, ...rightRailButtons].forEach((button) => {
+      button.addEventListener("click", () => {
+        toggleSidebarSection(button.dataset.sidebarSide, button.dataset.sidebarTarget);
+      });
+    });
+
+    leftRailToggleButtonEl?.addEventListener("click", () => {
+      toggleRailCollapsed("left");
+    });
+
+    rightRailToggleButtonEl?.addEventListener("click", () => {
+      toggleRailCollapsed("right");
+    });
+
+    workspaceOverlayEl?.addEventListener("click", () => {
+      closeSidebarPanels();
+    });
+  }
+
+  function initializeReferenceImages() {
+    aiReferenceDropzoneEl?.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("[data-reference-remove]");
+      if (removeButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        removeAiReferenceImage(removeButton.dataset.referenceRemove);
+        return;
+      }
+      const previewTarget = event.target.closest("[data-reference-preview]");
+      if (previewTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        const referenceImage = getReferenceImageById(previewTarget.dataset.referencePreview);
+        if (referenceImage) {
+          openReferenceLightbox(referenceImage);
+        }
+        return;
+      }
+      aiReferenceInputEl?.click();
+    });
+
+    aiReferenceDropzoneEl?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      const removeButton = event.target.closest("[data-reference-remove]");
+      if (removeButton) {
+        return;
+      }
+
+      event.preventDefault();
+      const previewTarget = event.target.closest("[data-reference-preview]");
+      if (previewTarget) {
+        const referenceImage = getReferenceImageById(previewTarget.dataset.referencePreview);
+        if (referenceImage) {
+          openReferenceLightbox(referenceImage);
+        }
+        return;
+      }
+      aiReferenceInputEl?.click();
+    });
+
+    aiReferenceDropzoneEl?.addEventListener("dragenter", (event) => {
+      event.preventDefault();
+      aiReferenceDropzoneEl.classList.add("is-dragover");
+    });
+
+    aiReferenceDropzoneEl?.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      aiReferenceDropzoneEl.classList.add("is-dragover");
+    });
+
+    aiReferenceDropzoneEl?.addEventListener("dragleave", (event) => {
+      if (event.currentTarget !== event.target) {
+        return;
+      }
+      aiReferenceDropzoneEl.classList.remove("is-dragover");
+    });
+
+    aiReferenceDropzoneEl?.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      aiReferenceDropzoneEl.classList.remove("is-dragover");
+      const files = Array.from(event.dataTransfer?.files ?? []);
+      await addAiReferenceFiles(files);
+    });
+
+    aiReferenceInputEl?.addEventListener("change", async () => {
+      const files = Array.from(aiReferenceInputEl.files ?? []);
+      await addAiReferenceFiles(files);
+      aiReferenceInputEl.value = "";
+    });
+
+    aiReferenceListEl?.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("[data-reference-remove]");
+      if (!removeButton) {
+        return;
+      }
+
+      removeAiReferenceImage(removeButton.dataset.referenceRemove);
+    });
+
+    referenceLightboxBackdropEl?.addEventListener("click", closeReferenceLightbox);
+    referenceLightboxCloseEl?.addEventListener("click", closeReferenceLightbox);
+
+    renderAiReferenceImages();
+    initializeReferenceImageStorage();
+  }
+
+  function loadAiReferenceImages() {
+    const raw = window.sessionStorage.getItem(AI_REFERENCE_IMAGES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed.filter((image) => typeof image?.dataUrl === "string").slice(0, AI_REFERENCE_IMAGE_LIMIT);
+    } catch {
+      return [];
+    }
+  }
+
+  function initializeReferenceImageStorage() {
+    if (aiReferenceStoragePromise) {
+      return aiReferenceStoragePromise;
+    }
+
+    aiReferenceStoragePromise = (async () => {
+      const storedImages = await loadAiReferenceImagesFromIndexedDb();
+      const { images: hydratedImages, changed } = await ensureReferenceImageAccentColors(storedImages);
+      if (storedImages.length > 0 && storedImages.length >= aiReferenceImages.length) {
+        aiReferenceImages = hydratedImages.slice(0, AI_REFERENCE_IMAGE_LIMIT);
+        if (changed) {
+          await saveAiReferenceImagesToIndexedDb(aiReferenceImages);
+        }
+      } else if (aiReferenceImages.length > 0) {
+        await saveAiReferenceImagesToIndexedDb(aiReferenceImages);
+      }
+
+      try {
+        window.sessionStorage.removeItem(AI_REFERENCE_IMAGES_STORAGE_KEY);
+      } catch {}
+
+      renderAiReferenceImages();
+      renderAiOutputs();
+    })().catch((error) => {
+      console.warn("Failed to initialize AI reference storage.", error);
+    });
+
+    return aiReferenceStoragePromise;
+  }
+
+  function openAiReferenceImageDb() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error("IndexedDB is not available."));
+        return;
+      }
+
+      const request = window.indexedDB.open(AI_REFERENCE_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(AI_REFERENCE_DB_STORE_NAME)) {
+          database.createObjectStore(AI_REFERENCE_DB_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB."));
+    });
+  }
+
+  async function loadAiReferenceImagesFromIndexedDb() {
+    try {
+      const database = await openAiReferenceImageDb();
+      const result = await new Promise((resolve, reject) => {
+        const transaction = database.transaction(AI_REFERENCE_DB_STORE_NAME, "readonly");
+        const store = transaction.objectStore(AI_REFERENCE_DB_STORE_NAME);
+        const request = store.get(AI_REFERENCE_DB_RECORD_KEY);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Failed to read AI references from IndexedDB."));
+      });
+      database.close();
+
+      if (!Array.isArray(result)) {
+        return [];
+      }
+
+      return result.filter((image) => typeof image?.dataUrl === "string").slice(0, AI_REFERENCE_IMAGE_LIMIT);
+    } catch (error) {
+      console.warn("Failed to load AI references from IndexedDB.", error);
+      return [];
+    }
+  }
+
+  async function saveAiReferenceImagesToIndexedDb(images) {
+    const database = await openAiReferenceImageDb();
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(AI_REFERENCE_DB_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(AI_REFERENCE_DB_STORE_NAME);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("Failed to save AI references to IndexedDB."));
+      store.put(images, AI_REFERENCE_DB_RECORD_KEY);
+    });
+    database.close();
+  }
+
+  function sanitizeReferenceWeight(value) {
+    const numericValue = Number.parseFloat(value);
+    if (!Number.isFinite(numericValue)) {
+      return "2.0";
+    }
+
+    return Math.min(3, Math.max(0.5, numericValue)).toFixed(1);
+  }
+
+  function getReferenceImageById(referenceImageId) {
+    if (!referenceImageId) {
+      return null;
+    }
+
+    return aiReferenceImages.find((image) => image.id === referenceImageId) || null;
+  }
+
+  function getReferenceUsageMap() {
+    const usageMap = new Map();
+
+    panels.forEach((panel, index) => {
+      if (!panel.referenceImageId) {
+        return;
+      }
+
+      const usageList = usageMap.get(panel.referenceImageId) ?? [];
+      usageList.push(`S${String(index + 1).padStart(2, "0")}`);
+      usageMap.set(panel.referenceImageId, usageList);
+    });
+
+    return usageMap;
+  }
+
+  function persistAiReferenceImages() {
+    try {
+      window.sessionStorage.setItem(AI_REFERENCE_IMAGES_STORAGE_KEY, JSON.stringify(aiReferenceImages));
+      return true;
+    } catch {
+      setStatus("레퍼런스 이미지가 많아서 모두 저장하지 못했습니다. 장수를 줄여주세요.", "warning");
+      return false;
+    }
+  }
+
+  async function addAiReferenceFiles(files) {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    const remainingSlots = AI_REFERENCE_IMAGE_LIMIT - aiReferenceImages.length;
+    if (remainingSlots <= 0) {
+      setStatus(`레퍼런스 이미지는 최대 ${AI_REFERENCE_IMAGE_LIMIT}장까지 추가할 수 있습니다.`, "warning");
+      return;
+    }
+
+    const acceptedFiles = imageFiles.slice(0, remainingSlots);
+    const processedImages = [];
+
+    for (const file of acceptedFiles) {
+      try {
+        const processed = await processAiReferenceFile(file);
+        if (processed) {
+          processedImages.push(processed);
+        }
+      } catch (error) {
+        console.warn("Failed to process ai reference image.", error);
+      }
+    }
+
+    if (processedImages.length === 0) {
+      setStatus("이미지를 읽지 못했습니다. 다른 파일로 다시 시도해 주세요.", "warning");
+      return;
+    }
+
+    aiReferenceImages = [...aiReferenceImages, ...processedImages];
+    await persistAiReferenceImages();
+    renderAiReferenceImages();
+    setStatus(`${processedImages.length}개의 레퍼런스 이미지를 추가했습니다.`);
+  }
+
+  async function removeAiReferenceImage(referenceId) {
+    const nextImages = aiReferenceImages.filter((image) => image.id !== referenceId);
+    if (nextImages.length === aiReferenceImages.length) {
+      return;
+    }
+
+    aiReferenceImages = nextImages;
+    await persistAiReferenceImages();
+    renderAiReferenceImages();
+    setStatus("레퍼런스 이미지를 제거했습니다.");
+  }
+
+  /* function renderAiReferenceImages() {
+    if (!aiReferenceListEl || !aiReferenceCountEl) {
+      return;
+    }
+
+    aiReferenceCountEl.textContent = `${aiReferenceImages.length}장`;
+    aiReferenceListEl.innerHTML = "";
+    aiReferenceListEl.hidden = aiReferenceImages.length === 0;
+
+    aiReferenceImages.forEach((image, imageIndex) => {
+      const orderLabel = String(imageIndex + 1).padStart(2, "0");
+      const usageLabels = usageMap.get(image.id) ?? [];
+      const visibleUsageLabels = usageLabels.slice(0, 2);
+      const extraUsageCount = Math.max(0, usageLabels.length - visibleUsageLabels.length);
+      const orderLabel = String(imageIndex + 1).padStart(2, "0");
+      const usageLabels = usageMap.get(image.id) ?? [];
+      const visibleUsageLabels = usageLabels.slice(0, 2);
+      const extraUsageCount = Math.max(0, usageLabels.length - visibleUsageLabels.length);
+      const item = document.createElement("article");
+      item.className = "ai-reference-item";
+      item.innerHTML = `
+        <img class="ai-reference-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
+        <button class="ai-reference-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6L18 18M18 6L6 18"></path>
+          </svg>
+        </button>
+        <div class="ai-reference-meta">
+          <strong class="ai-reference-name">${escapeHtml(image.name || "reference.jpg")}</strong>
+          <span class="ai-reference-size">${escapeHtml(`${image.width}×${image.height}`)}</span>
+        </div>
+      `;
+      aiReferenceListEl.appendChild(item);
+    });
+  }
+
+  } */
+
+  async function processAiReferenceFile(file) {
+    const dataUrl = await readFileAsDataUrl(file);
+    const image = await loadImageElement(dataUrl);
+    const maxSize = 720;
+    const ratio = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+    const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return null;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(image, 0, 0, width, height);
+
+    return {
+      id: createId(),
+      name: file.name,
+      mimeType: "image/jpeg",
+      width,
+      height,
+      dataUrl: canvas.toDataURL("image/jpeg", 0.78)
+    };
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImageElement(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Failed to decode image."));
+      image.src = dataUrl;
+    });
+  }
+
+  async function deriveReferenceAccentRgb(dataUrl) {
+    const image = await loadImageElement(dataUrl);
+    const sampleSize = 18;
+    const sampleCanvas = document.createElement("canvas");
+    const sampleContext = sampleCanvas.getContext("2d");
+
+    if (!sampleContext) {
+      return "37 99 235";
+    }
+
+    sampleCanvas.width = sampleSize;
+    sampleCanvas.height = sampleSize;
+    sampleContext.drawImage(image, 0, 0, sampleSize, sampleSize);
+
+    const pixelData = sampleContext.getImageData(0, 0, sampleSize, sampleSize).data;
+    let redTotal = 0;
+    let greenTotal = 0;
+    let blueTotal = 0;
+    let visiblePixels = 0;
+
+    for (let index = 0; index < pixelData.length; index += 4) {
+      const alpha = pixelData[index + 3];
+      if (alpha < 12) {
+        continue;
+      }
+
+      redTotal += pixelData[index];
+      greenTotal += pixelData[index + 1];
+      blueTotal += pixelData[index + 2];
+      visiblePixels += 1;
+    }
+
+    if (visiblePixels === 0) {
+      return "37 99 235";
+    }
+
+    return `${Math.round(redTotal / visiblePixels)} ${Math.round(greenTotal / visiblePixels)} ${Math.round(blueTotal / visiblePixels)}`;
+  }
+
+  async function ensureReferenceImageAccentColors(images) {
+    let changed = false;
+    const nextImages = await Promise.all(
+      images.map(async (image) => {
+        if (image?.accentRgb || typeof image?.dataUrl !== "string") {
+          return image;
+        }
+
+        changed = true;
+        return {
+          ...image,
+          accentRgb: await deriveReferenceAccentRgb(image.dataUrl)
+        };
+      })
+    );
+
+    return { images: nextImages, changed };
+  }
+
+  function loadSidebarSections(side) {
+    const key = side === "left" ? LEFT_SIDEBAR_SECTION_STORAGE_KEY : RIGHT_SIDEBAR_SECTION_STORAGE_KEY;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return [];
+    }
+
+    const validSectionIds = new Set(getSidebarSectionIds(side));
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return getSidebarSectionIds(side).filter((sectionId) => parsed.includes(sectionId));
+    } catch {
+      return validSectionIds.has(raw) ? [raw] : [];
+    }
+  }
+
+  function persistSidebarSections(side, values) {
+    const key = side === "left" ? LEFT_SIDEBAR_SECTION_STORAGE_KEY : RIGHT_SIDEBAR_SECTION_STORAGE_KEY;
+    window.localStorage.setItem(key, JSON.stringify(values));
+  }
+
+  function loadRailCollapsed(side) {
+    const key = side === "left" ? LEFT_RAIL_COLLAPSED_STORAGE_KEY : RIGHT_RAIL_COLLAPSED_STORAGE_KEY;
+    return window.localStorage.getItem(key) === "true";
+  }
+
+  function persistRailCollapsed(side, value) {
+    const key = side === "left" ? LEFT_RAIL_COLLAPSED_STORAGE_KEY : RIGHT_RAIL_COLLAPSED_STORAGE_KEY;
+    window.localStorage.setItem(key, String(value));
+  }
+
+  function getRailElement(side) {
+    return side === "left" ? leftRailEl : rightRailEl;
+  }
+
+  function getRailButtons(side) {
+    return side === "left" ? leftRailButtons : rightRailButtons;
+  }
+
+  function getSidebarSections(side) {
+    return side === "left" ? leftSidebarSections : rightSidebarSections;
+  }
+
+  function getSidebarSectionIds(side) {
+    return getSidebarSections(side).map((section) => section.dataset.sidebarSection);
+  }
+
+  function getSidebarElement(side) {
+    return side === "left" ? projectSidebarEl : previewSidebarEl;
+  }
+
+  function getActiveSidebarSections(side) {
+    return side === "left" ? activeLeftSidebarSections : activeRightSidebarSections;
+  }
+
+  function isRailCollapsed(side) {
+    return side === "left" ? leftRailCollapsed : rightRailCollapsed;
+  }
+
+  function toggleRailCollapsed(side) {
+    const nextValue = !isRailCollapsed(side);
+
+    if (side === "left") {
+      leftRailCollapsed = nextValue;
+      if (nextValue) {
+        activeLeftSidebarSections = [];
+        persistSidebarSections("left", []);
+      }
+    } else {
+      rightRailCollapsed = nextValue;
+      if (nextValue) {
+        activeRightSidebarSections = [];
+        persistSidebarSections("right", []);
+      }
+    }
+
+    persistRailCollapsed(side, nextValue);
+    applySidebarRailState(false);
+    setStatus(`${side === "left" ? "왼쪽" : "오른쪽"} 레일을 ${nextValue ? "접었습니다" : "펼쳤습니다"}.`);
+  }
+
+  function toggleSidebarSection(side, sectionId) {
+    if (isRailCollapsed(side)) {
+      if (side === "left") {
+        leftRailCollapsed = false;
+      } else {
+        rightRailCollapsed = false;
+      }
+      persistRailCollapsed(side, false);
+    }
+
+    const currentSections = new Set(getActiveSidebarSections(side));
+    const willActivate = !currentSections.has(sectionId);
+
+    if (willActivate) {
+      currentSections.add(sectionId);
+    } else {
+      currentSections.delete(sectionId);
+    }
+
+    setSidebarSections(side, Array.from(currentSections), false);
+    const label = getSidebarSectionLabel(side, sectionId);
+    if (label) {
+      setStatus(`${label} 섹션을 ${willActivate ? "열었습니다" : "닫았습니다"}.`);
+    }
+  }
+
+  function setSidebarSections(side, sectionIds, announce = true) {
+    const nextSections = getSidebarSectionIds(side).filter((sectionId) => sectionIds.includes(sectionId));
+    if (side === "left") {
+      activeLeftSidebarSections = nextSections;
+      if (nextSections.length > 0) {
+        leftRailCollapsed = false;
+        persistRailCollapsed("left", false);
+      }
+    } else {
+      activeRightSidebarSections = nextSections;
+      if (nextSections.length > 0) {
+        rightRailCollapsed = false;
+        persistRailCollapsed("right", false);
+      }
+    }
+
+    persistSidebarSections(side, nextSections);
+    applySidebarRailState(false);
+
+    if (!announce) {
+      return;
+    }
+  }
+
+  function closeSidebarPanels() {
+    const hadOpenPanel = activeLeftSidebarSections.length > 0 || activeRightSidebarSections.length > 0;
+    activeLeftSidebarSections = [];
+    activeRightSidebarSections = [];
+    persistSidebarSections("left", []);
+    persistSidebarSections("right", []);
+    applySidebarRailState(false);
+
+    if (hadOpenPanel) {
+      setStatus("열린 사이드 패널을 닫았습니다.");
+    }
+  }
+
+  function getSidebarSectionLabel(side, sectionId) {
+    const button = getRailButtons(side).find((item) => item.dataset.sidebarTarget === sectionId);
+    return button?.dataset.sidebarLabel ?? "";
+  }
+
+  function applySidebarRailState() {
+    applySidebarRailStateForSide("left", activeLeftSidebarSections);
+    applySidebarRailStateForSide("right", activeRightSidebarSections);
+    document.body.classList.remove("is-sidebar-collapsed", "is-preview-collapsed");
+    workspaceMainEl?.classList.toggle("has-active-panel", activeLeftSidebarSections.length > 0 || activeRightSidebarSections.length > 0);
+    applyPreviewSidebarState(false);
+  }
+
+  function applySidebarRailStateForSide(side, activeSectionIds) {
+    const railEl = getRailElement(side);
+    const railButtons = getRailButtons(side);
+    const sections = getSidebarSections(side);
+    const sidebarEl = getSidebarElement(side);
+    const railCollapsed = isRailCollapsed(side);
+    const toggleButton = side === "left" ? leftRailToggleButtonEl : rightRailToggleButtonEl;
+    const toggleLabel = `${side === "left" ? "왼쪽" : "오른쪽"} 레일 ${railCollapsed ? "펼치기" : "접기"}`;
+    const activeSectionSet = new Set(activeSectionIds);
+    const isPanelOpen = activeSectionIds.length > 0;
+
+    railEl?.classList.toggle("is-collapsed", railCollapsed);
+    railEl?.classList.toggle("is-panel-open", isPanelOpen);
+    railEl?.setAttribute("data-collapsed", String(railCollapsed));
+    railEl?.setAttribute("data-panel-open", String(isPanelOpen));
+    toggleButton?.setAttribute("aria-expanded", String(!railCollapsed));
+    toggleButton?.setAttribute("aria-label", toggleLabel);
+
+    sidebarEl.classList.toggle("is-open", isPanelOpen);
+    sidebarEl.dataset.activeSections = activeSectionIds.join(",");
+    sidebarEl.setAttribute("aria-hidden", isPanelOpen ? "false" : "true");
+
+    railButtons.forEach((button) => {
+      const isActive = activeSectionSet.has(button.dataset.sidebarTarget);
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+      button.setAttribute("aria-label", `${button.dataset.sidebarLabel} 패널 ${isActive ? "닫기" : "열기"}`);
+    });
+
+    sections.forEach((section) => {
+      const isActive = activeSectionSet.has(section.dataset.sidebarSection);
+      section.hidden = !isActive;
+      section.classList.toggle("is-active", isActive);
+    });
+  }
+
+  function startLinkDrag(event, sourceId) {
+    if (linkState?.sourceId === sourceId) {
+      cleanupLinkDrag(false);
+      renderConnections();
+      setStatus("연결 모드를 취소했습니다.");
+      return;
+    }
+
+    cleanupLinkDrag(false);
+
+    const startPoint = getPortPoint(sourceId, "out");
+    if (!startPoint) {
+      return;
+    }
+
+    if (!selectedPanelIds.has(sourceId)) {
+      setSelection([sourceId]);
+    }
+
+    linkState = {
+      pointerId: event.pointerId,
+      sourceId,
+      targetId: null,
+      historySnapshot: createHistorySnapshot(),
+      currentPoint: startPoint
+    };
+
+    document.body.classList.add("is-linking");
+    updateLinkTargetStates();
+    renderConnections();
+    window.addEventListener("pointermove", handleLinkDragMove);
+    window.addEventListener("pointerup", handleLinkDragEnd);
+    window.addEventListener("pointercancel", handleLinkDragEnd);
+    setStatus("다음 컷으로 연결할 카드를 선택하세요.");
+  }
+
+  function handleLinkDragMove(event) {
+    if (!linkState || event.pointerId !== linkState.pointerId) {
+      return;
+    }
+
+    linkState.currentPoint = clientToBoardPoint(event.clientX, event.clientY);
+    linkState.targetId = getDropTargetId(event.clientX, event.clientY, linkState.sourceId);
+    updateLinkTargetStates();
+    renderConnections();
+  }
+
+  function handleLinkDragEnd(event) {
+    if (!linkState || event.pointerId !== linkState.pointerId) {
+      return;
+    }
+
+    const targetId = getDropTargetId(event.clientX, event.clientY, linkState.sourceId);
+    finishLinkDrag(targetId);
+  }
+
+  function finishLinkDrag(targetId) {
+    if (!linkState) {
+      return;
+    }
+
+    const { sourceId, historySnapshot } = linkState;
+    cleanupLinkDrag(false);
+
+    if (!targetId || targetId === sourceId) {
+      renderConnections();
+      setStatus("연결을 취소했습니다.");
+      return;
+    }
+
+    const sourcePanel = getPanelById(sourceId);
+    if (!sourcePanel) {
+      renderConnections();
+      return;
+    }
+
+    const nextPanelIds = [targetId];
+    const isSameLink =
+      Array.isArray(sourcePanel.nextPanelIds) &&
+      sourcePanel.nextPanelIds.length === nextPanelIds.length &&
+      sourcePanel.nextPanelIds.every((value, index) => value === nextPanelIds[index]);
+
+    if (isSameLink) {
+      renderConnections();
+      setStatus("이미 같은 컷과 연결되어 있습니다.");
+      return;
+    }
+
+    pushHistoryState(historySnapshot);
+    updatePanel(sourceId, { nextPanelIds }, { announce: false });
+    updateHistoryUI();
+    setStatus("컷 연결을 저장했습니다.");
+  }
+
+  function cleanupLinkDrag(render = true) {
+    if (!linkState) {
+      return;
+    }
+
+    linkState = null;
+    document.body.classList.remove("is-linking");
+    window.removeEventListener("pointermove", handleLinkDragMove);
+    window.removeEventListener("pointerup", handleLinkDragEnd);
+    window.removeEventListener("pointercancel", handleLinkDragEnd);
+    updateLinkTargetStates();
+
+    if (render) {
+      renderConnections();
+    }
+  }
+
+  function clearPanelConnections(panelId) {
+    const panel = getPanelById(panelId);
+    if (!panel || !Array.isArray(panel.nextPanelIds) || panel.nextPanelIds.length === 0) {
+      return;
+    }
+
+    pushHistoryState();
+    updatePanel(panelId, { nextPanelIds: [] }, { announce: false });
+    updateHistoryUI();
+    setStatus("컷 연결을 지웠습니다.");
+  }
+
+  function updateLinkTargetStates() {
+    board.querySelectorAll(".story-card").forEach((cardEl) => {
+      const panelId = cardEl.dataset.panelId;
+      cardEl.classList.toggle("is-link-source", linkState?.sourceId === panelId);
+      cardEl.classList.toggle("is-link-target", Boolean(linkState?.targetId) && linkState?.targetId === panelId);
+
+      const inputPort = cardEl.querySelector(".node-port--in");
+      const outputPort = cardEl.querySelector(".node-port--out");
+      inputPort?.classList.toggle("is-active", linkState?.targetId === panelId);
+      outputPort?.classList.toggle("is-active", linkState?.sourceId === panelId);
+    });
+  }
+
+  function handleLinkKeyDown(event) {
+    if (event.key !== "Escape") {
+      return;
+    }
+
+    if (!referenceLightboxEl?.hidden) {
+      event.preventDefault();
+      closeReferenceLightbox();
+      return;
+    }
+
+    if (!linkState) {
+      return;
+    }
+
+    event.preventDefault();
+    cleanupLinkDrag();
+    setStatus("연결 모드를 취소했습니다.");
+  }
+
+  function getDropTargetId(clientX, clientY, sourceId) {
+    const element = document.elementFromPoint(clientX, clientY);
+    const portTargetId = element?.closest?.(".node-port--in")?.dataset?.panelId;
+    if (portTargetId && portTargetId !== sourceId) {
+      return portTargetId;
+    }
+
+    const cardTargetId = element?.closest?.(".story-card")?.dataset?.panelId;
+    if (cardTargetId && cardTargetId !== sourceId) {
+      return cardTargetId;
+    }
+
+    return null;
+  }
+
+  function getPortPoint(panelId, portType) {
+    const portEl = board.querySelector(`[data-panel-id="${panelId}"] .node-port--${portType} .node-port-core`);
+    if (!portEl) {
+      return null;
+    }
+
+    const rect = portEl.getBoundingClientRect();
+    return clientToBoardPoint(rect.left + rect.width * 0.5, rect.top + rect.height * 0.5);
+  }
+
+  function clientToBoardPoint(clientX, clientY) {
+    const viewportRect = canvasViewport.getBoundingClientRect();
+    return {
+      x: (canvasViewport.scrollLeft + clientX - viewportRect.left) / zoom,
+      y: (canvasViewport.scrollTop + clientY - viewportRect.top) / zoom
+    };
+  }
+
+  function syncMediaView(panel, buttons, stagePanels) {
+    buttons.forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.view === panel.viewMode);
+    });
+
+    stagePanels.forEach((section) => {
+      section.hidden = section.dataset.panelView !== panel.viewMode;
+    });
+  }
+
+  function getPromptCollapsedField(kind) {
+    if (kind === "t2i") {
+      return "t2iCollapsed";
+    }
+
+    if (kind === "i2v") {
+      return "i2vCollapsed";
+    }
+
+    return "";
+  }
+
+  function syncPromptPanels(panel, sections) {
+    sections.forEach((section) => {
+      const kind = section.dataset.panelView;
+      const fieldName = getPromptCollapsedField(kind);
+      if (!fieldName) {
+        return;
+      }
+
+      const collapsed = Boolean(panel[fieldName]);
+      const body = section.querySelector(".prompt-panel-body");
+      const preview = section.querySelector(".prompt-collapsed-preview");
+      const button = section.querySelector(".prompt-toggle-button");
+
+      section.classList.toggle("is-collapsed", collapsed);
+      if (body) {
+        body.hidden = collapsed;
+      }
+
+      if (preview) {
+        preview.hidden = true;
+        preview.textContent = "";
+      }
+
+      if (button) {
+        button.setAttribute("aria-expanded", String(!collapsed));
+        button.setAttribute("aria-label", `${kind.toUpperCase()} 프롬프트 ${collapsed ? "펼치기" : "접기"}`);
+        button.title = collapsed ? "프롬프트 펼치기" : "프롬프트 접기";
+      }
+    });
+  }
+
+  function applyPreviewSidebarState(announce = true) {
+    const isOpen = activeRightSidebarSections.length > 0;
+    togglePreviewButtonEl?.setAttribute("aria-expanded", String(isOpen));
+    togglePreviewButtonEl?.setAttribute("aria-label", isOpen ? "프리뷰 닫기" : "프리뷰 열기");
+    if (togglePreviewLabelEl) {
+      togglePreviewLabelEl.textContent = isOpen ? "프리뷰 닫기" : "프리뷰 열기";
+    }
+
+    if (announce) {
+      setStatus(isOpen ? "프리뷰를 펼쳤습니다." : "프리뷰를 접었습니다.");
+    }
+  }
+
+  function renderPreviewSidebar() {
+    previewVideoUrlInputEl.value = project.previewVideoUrl ?? "";
+    previewPosterUrlInputEl.value = project.previewPosterUrl ?? "";
+    renderPreviewVideo();
+  }
+
+  function renderPreviewVideo() {
+    const videoUrl = (project.previewVideoUrl ?? "").trim();
+    const posterUrl = (project.previewPosterUrl ?? "").trim();
+
+    if (!videoUrl) {
+      previewVideoEl.removeAttribute("src");
+      previewVideoEl.removeAttribute("poster");
+      previewVideoEl.classList.remove("is-visible");
+      previewVideoEl.load();
+      previewVideoEmptyEl.classList.remove("is-hidden");
+      return;
+    }
+
+    previewVideoEl.src = videoUrl;
+    if (posterUrl) {
+      previewVideoEl.poster = posterUrl;
+    } else {
+      previewVideoEl.removeAttribute("poster");
+    }
+    previewVideoEl.classList.add("is-visible");
+    previewVideoEmptyEl.classList.add("is-hidden");
+  }
+
+  function renderAiOutputs() {
+    aiCutCountOutputEl.textContent = panels.length > 0 ? String(panels.length) : "-";
+    if (project.aiBrief?.trim()) {
+      const referenceMeta = aiReferenceImages.length > 0 ? ` · 레퍼런스 ${aiReferenceImages.length}장` : "";
+      aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 브리프 초안 준비 완료${referenceMeta}`;
+    } else {
+      aiPlanMetaEl.textContent = "브리프와 레퍼런스 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
+    }
+
+    aiSummaryOutputEl.textContent = project.aiSummary?.trim()
+      ? project.aiSummary
+      : "브리프를 넣고 생성하면 전체 연출 방향이 여기에 정리됩니다.";
+
+    aiSequenceOutputEl.innerHTML = "";
+    panels.forEach((panel, index) => {
+      const item = document.createElement("article");
+      item.className = "sequence-item";
+      item.innerHTML = `
+        <span class="sequence-index">${index + 1}</span>
+        <div>
+          <strong>${escapeHtml(panel.sceneTitle || `컷 ${index + 1}`)}</strong>
+          <p>${escapeHtml(composeSequenceText(panel))}</p>
+        </div>
+      `;
+      aiSequenceOutputEl.appendChild(item);
+    });
+  }
+
+  function composeSequenceText(panel) {
+    const duration = panel.durationLabel ? `${panel.durationLabel} · ` : "";
+    const caption = panel.caption || "설명이 아직 없습니다.";
+    return `${duration}${caption.length > 88 ? `${caption.slice(0, 87)}…` : caption}`;
+  }
+
+  function renderSelectionDetail() {
+    const selectedPanels = panels.filter((panel) => selectedPanelIds.has(panel.id));
+    selectionDetailOutputEl.innerHTML = "";
+
+    if (selectedPanels.length === 0) {
+      selectionDetailOutputEl.textContent = "카드를 선택하면 이곳에 컷 설명과 프롬프트 요약이 표시됩니다.";
+      return;
+    }
+
+    if (selectedPanels.length > 1) {
+      selectionDetailOutputEl.textContent = `${selectedPanels.length}개의 컷이 선택되어 있습니다. 여러 컷의 흐름을 비교하거나 복제/삭제를 진행할 수 있습니다.`;
+      return;
+    }
+
+    const panel = selectedPanels[0];
+    const detail = document.createElement("article");
+    detail.className = "selection-detail-card";
+    detail.innerHTML = `
+      <strong>${escapeHtml(panel.sceneTitle || "선택한 컷")}</strong>
+      <p>${escapeHtml(panel.caption || "설명 없음")}</p>
+      <p>${escapeHtml([
+        panel.i2tPrompt ? `I2T ${panel.i2tPrompt.length}자` : "I2T 비어 있음",
+        panel.t2iPrompt ? `T2I ${panel.t2iPrompt.length}자` : "T2I 비어 있음",
+        panel.i2vStartPrompt || panel.i2vMotionPrompt || panel.i2vEndPrompt ? "I2V 준비됨" : "I2V 비어 있음"
+      ].join(" · "))}</p>
+    `;
+    selectionDetailOutputEl.appendChild(detail);
+  }
+
+  function renderConnections() {
+    connectionLayerEl.innerHTML = "";
+    const links = collectLinks();
+
+    links.forEach(({ fromId, toId, type }) => {
+      const fromPoint = getPortPoint(fromId, "out");
+      const toPoint = getPortPoint(toId, "in");
+      if (!fromPoint || !toPoint) {
+        return;
+      }
+
+      appendConnectionPath(fromPoint, toPoint, type);
+    });
+
+    if (linkState) {
+      const fromPoint = getPortPoint(linkState.sourceId, "out");
+      const toPoint =
+        linkState.targetId
+          ? getPortPoint(linkState.targetId, "in")
+          : linkState.currentPoint;
+
+      if (fromPoint && toPoint) {
+        appendConnectionPath(fromPoint, toPoint, linkState.targetId ? "preview-target" : "preview");
+      }
+    }
+  }
+
+  function collectLinks() {
+    const explicitLinks = panels.flatMap((panel) =>
+      panel.nextPanelIds.map((nextId) => ({ fromId: panel.id, toId: nextId, type: "manual" }))
+    );
+    if (explicitLinks.length > 0) {
+      return explicitLinks;
+    }
+
+    return panels.slice(0, -1).map((panel, index) => ({
+      fromId: panel.id,
+      toId: panels[index + 1].id,
+      type: "suggested"
+    }));
+  }
+
+  function appendConnectionPath(fromPoint, toPoint, type) {
+    const curve = Math.max(60, Math.abs(toPoint.x - fromPoint.x) * 0.35);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute(
+      "d",
+      `M ${fromPoint.x} ${fromPoint.y} C ${fromPoint.x + curve} ${fromPoint.y}, ${toPoint.x - curve} ${toPoint.y}, ${toPoint.x} ${toPoint.y}`
+    );
+    path.setAttribute("class", `connection-line connection-line--${type}`);
+    connectionLayerEl.appendChild(path);
+
+    const startDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    startDot.setAttribute("cx", String(fromPoint.x));
+    startDot.setAttribute("cy", String(fromPoint.y));
+    startDot.setAttribute("r", type.startsWith("preview") ? "4.4" : "3.8");
+    startDot.setAttribute("class", `connection-dot connection-dot--${type.startsWith("preview") ? "preview" : type}`);
+    connectionLayerEl.appendChild(startDot);
+
+    const endDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    endDot.setAttribute("cx", String(toPoint.x));
+    endDot.setAttribute("cy", String(toPoint.y));
+    endDot.setAttribute("r", type === "preview-target" ? "5.2" : "4");
+    endDot.setAttribute("class", `connection-dot connection-dot--${type.startsWith("preview") ? "preview" : type}`);
+    connectionLayerEl.appendChild(endDot);
+  }
+
+  function syncConnectionLayer() {
+    connectionLayerEl.style.width = board.style.width;
+    connectionLayerEl.style.height = board.style.height;
+    connectionLayerEl.style.transform = board.style.transform;
+    connectionLayerEl.setAttribute("viewBox", `0 0 ${canvasWidth} ${canvasHeight}`);
+  }
+
+  async function handleGeneratePlan() {
+    const brief = project.aiBrief?.trim();
+    if (!brief) {
+      aiBriefInputEl.focus();
+      setStatus("브리프를 먼저 입력해 주세요.", "warning");
+      return;
+    }
+
+    setGeneratingState(true);
+    pushHistoryState();
+    setStatus("브리프를 분석해 컷 초안을 생성하고 있습니다.");
+
+    try {
+      const payload = {
+        brief,
+        project: cloneProject(),
+        existingPanelCount: panels.length,
+        referenceWeight: Number.parseFloat(sanitizeReferenceWeight(project.referenceWeight)),
+        referenceImageCount: aiReferenceImages.length,
+        referenceImages: aiReferenceImages.map((image) => ({
+          name: image.name,
+          mimeType: image.mimeType,
+          dataUrl: image.dataUrl,
+          width: image.width,
+          height: image.height
+        }))
+      };
+      let plan = null;
+      let source = "local";
+
+      if (window.ShotBoardAI && typeof window.ShotBoardAI.generateStoryboard === "function") {
+        try {
+          plan = await window.ShotBoardAI.generateStoryboard(payload);
+          if (plan) {
+            source = "api";
+          }
+        } catch (error) {
+          console.warn("ShotBoardAI.generateStoryboard failed, using local fallback.", error);
+        }
+      }
+
+      if (!plan) {
+        plan = buildLocalStoryboardPlan(payload);
+      }
+
+      applyStoryboardPlan(normalizePlan(plan, payload), source);
+    } finally {
+      setGeneratingState(false);
+    }
+  }
+
+  function getGeneratingStages() {
+    if (aiReferenceImages.length > 0) {
+      return [
+        {
+          title: "레퍼런스 이미지 분석 중",
+          hint: "업로드한 이미지를 읽고 유지할 요소와 바꿀 요소를 추출하고 있습니다."
+        },
+        {
+          title: "I2T 방향 정리 중",
+          hint: "기존 이미지에서 리디자인할 핵심 포인트를 I2T 프롬프트로 정리하고 있습니다."
+        },
+        {
+          title: "T2I·I2V 연결 중",
+          hint: "리디자인 결과가 이미지 생성과 영상 생성으로 자연스럽게 이어지도록 맞추고 있습니다."
+        },
+        {
+          title: "보드 반영 준비 중",
+          hint: "생성된 컷과 프롬프트를 카드에 정리하고 있습니다."
+        }
+      ];
+    }
+
+    return [
+      {
+        title: "브리프 해석 중",
+        hint: "러닝타임과 장면 분위기를 읽어 핵심 컷 수를 계산하고 있습니다."
+      },
+      {
+        title: "컷 흐름 설계 중",
+        hint: "훅부터 엔드 프레임까지 이어지는 장면 순서를 정리하고 있습니다."
+      },
+      {
+        title: "프롬프트 조립 중",
+        hint: "I2T, T2I, I2V에 들어갈 프롬프트를 모델별 흐름으로 맞추고 있습니다."
+      },
+      {
+        title: "보드 반영 준비 중",
+        hint: "생성된 카드 위치와 우측 아웃풋 패널을 함께 정리하고 있습니다."
+      }
+    ];
+  }
+
+  function renderGeneratingStage(index = 0) {
+    const stages = getGeneratingStages();
+    const safeStage = stages[index % stages.length];
+    if (aiGenerationStageEl) {
+      aiGenerationStageEl.textContent = safeStage.title;
+    }
+    if (aiGenerationHintEl) {
+      aiGenerationHintEl.textContent = safeStage.hint;
+    }
+    if (aiPlanMetaEl) {
+      aiPlanMetaEl.textContent = `${safeStage.title}...`;
+    }
+  }
+
+  function setGeneratingState(nextState) {
+    aiGenerating = nextState;
+    generatePlanButtonEl.disabled = nextState;
+    generatePlanButtonLabelEl.textContent = nextState ? "생성 중..." : "AI 콘티 초안 생성";
+    generatePlanButtonEl.classList.toggle("is-generating", nextState);
+    generatePlanButtonEl.setAttribute("aria-busy", String(nextState));
+    if (aiGenerationIndicatorEl) {
+      aiGenerationIndicatorEl.hidden = !nextState;
+    }
+    aiPlanMetaEl.classList.toggle("is-generating", nextState);
+    aiSidebarCardEl?.classList.toggle("is-generating", nextState);
+    workspaceStageEl?.classList.toggle("is-generating", nextState);
+
+    if (nextState) {
+      aiGenerationStageIndex = 0;
+      renderGeneratingStage(aiGenerationStageIndex);
+      window.clearInterval(aiGenerationIntervalId);
+      aiGenerationIntervalId = window.setInterval(() => {
+        aiGenerationStageIndex = (aiGenerationStageIndex + 1) % getGeneratingStages().length;
+        renderGeneratingStage(aiGenerationStageIndex);
+      }, 1150);
+      return;
+    }
+
+    window.clearInterval(aiGenerationIntervalId);
+    aiGenerationIntervalId = null;
+    renderAiOutputs();
+  }
+
+  function normalizePlan(rawPlan, payload) {
+    const rawCuts = Array.isArray(rawPlan?.cuts) ? rawPlan.cuts : [];
+    const cuts = rawCuts.length > 0 ? rawCuts : buildLocalStoryboardPlan(payload).cuts;
+    const projectDraft = normalizeProjectDraft(rawPlan?.projectDraft, payload, cuts);
+    return {
+      summary: typeof rawPlan?.summary === "string" && rawPlan.summary.trim()
+        ? rawPlan.summary.trim()
+        : "브리프를 기반으로 컷 흐름과 생성 프롬프트 초안을 만들었습니다.",
+      previewVideoUrl: typeof rawPlan?.previewVideoUrl === "string" ? rawPlan.previewVideoUrl : "",
+      previewPosterUrl: typeof rawPlan?.previewPosterUrl === "string" ? rawPlan.previewPosterUrl : "",
+      projectDraft,
+      cuts: cuts.map((cut, index) => ({
+        sceneTitle: typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
+        durationLabel: typeof cut.durationLabel === "string" ? cut.durationLabel : "",
+        caption: withDurationInCaption(
+          typeof cut.caption === "string" ? cut.caption : "",
+          typeof cut.durationLabel === "string" ? cut.durationLabel : ""
+        ),
+        i2tPrompt: typeof cut.i2tPrompt === "string"
+          ? cut.i2tPrompt
+          : buildI2TPrompt(
+            typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
+            typeof cut.caption === "string" ? cut.caption : ""
+          ),
+        t2iPrompt: typeof cut.t2iPrompt === "string" ? cut.t2iPrompt : "",
+        i2vStartPrompt: typeof cut.i2vStartPrompt === "string" ? cut.i2vStartPrompt : "",
+        i2vMotionPrompt: typeof cut.i2vMotionPrompt === "string" ? cut.i2vMotionPrompt : "",
+        i2vEndPrompt: typeof cut.i2vEndPrompt === "string" ? cut.i2vEndPrompt : ""
+      }))
+    };
+  }
+
+  function normalizeProjectDraft(rawProjectDraft, payload, cuts) {
+    const fallback = buildProjectDraft(payload, extractDuration(payload?.brief || ""), cuts);
+    const source = rawProjectDraft && typeof rawProjectDraft === "object" ? rawProjectDraft : {};
+
+    return {
+      title: typeof source.title === "string" && source.title.trim() ? source.title.trim() : fallback.title,
+      sequence: typeof source.sequence === "string" && source.sequence.trim() ? source.sequence.trim() : fallback.sequence,
+      runtime: typeof source.runtime === "string" && source.runtime.trim() ? source.runtime.trim() : fallback.runtime,
+      tone: typeof source.tone === "string" && source.tone.trim() ? source.tone.trim() : fallback.tone,
+      logline: typeof source.logline === "string" && source.logline.trim() ? source.logline.trim() : fallback.logline,
+      notes: typeof source.notes === "string" && source.notes.trim() ? source.notes.trim() : fallback.notes
+    };
+  }
+
+  function buildProjectDraft(payload, duration, cuts = []) {
+    const brief = payload?.brief?.trim() || "";
+    const title = deriveProjectTitle(brief);
+    const runtimeText = duration.min === duration.max ? `${duration.min}초` : `${duration.min}~${duration.max}초`;
+    const tone = brief.includes("차갑")
+      ? "고급스럽고 차가운 패션 광고 톤"
+      : brief.includes("따뜻")
+        ? "따뜻하고 서정적인 영상 톤"
+        : "브랜드 무드가 또렷한 시네마틱 광고 톤";
+    const cutCount = cuts.length > 0 ? cuts.length : Number(payload?.existingPanelCount) || 6;
+
+    return {
+      title,
+      sequence: "Scene 01",
+      runtime: runtimeText,
+      tone,
+      logline: `${runtimeText} 안에 브랜드의 태도와 감도를 또렷하게 보여주는 ${cutCount}컷 광고 콘티.`,
+      notes: `${cutCount}컷 기준으로 훅, 디테일, 움직임, 엔드 프레임 순서로 구성합니다. 카메라는 절제된 이동을 유지하고, 감정선은 차분하지만 강한 인상을 남기며, 색감은 브랜드 무드에 맞춰 정리합니다.`
+    };
+  }
+
+  function deriveProjectTitle(brief) {
+    if (!brief) {
+      return "AI 생성 프로젝트";
+    }
+
+    if (brief.includes("승마") && brief.includes("패션")) {
+      return "승마 패션 브랜드 광고";
+    }
+
+    if (brief.includes("브랜드") && brief.includes("광고")) {
+      return "브랜드 광고 콘티";
+    }
+
+    return brief.length > 20 ? `${brief.slice(0, 20)}…` : brief;
+  }
+
+  function withDurationInCaption(caption, durationLabel) {
+    const safeCaption = typeof caption === "string" ? caption.trim() : "";
+    const safeDuration = typeof durationLabel === "string" ? durationLabel.trim() : "";
+
+    if (!safeDuration) {
+      return safeCaption;
+    }
+
+    if (safeCaption.includes(safeDuration) || safeCaption.includes("분량")) {
+      return safeCaption;
+    }
+
+    return `${safeDuration} 분량. ${safeCaption}`.trim();
+  }
+
+  function applyStoryboardPlan(plan, source) {
+    const nextPanels = plan.cuts.map((cut, index) => {
+      const position = getGeneratedPosition(index);
+      const existing = panels[index];
+      return createEmptyPanel({
+        id: existing?.id || createId(),
+        x: position.x,
+        y: position.y,
+        z: index + 1,
+        image: existing?.image || "",
+        fileName: existing?.fileName || "",
+        viewMode: existing?.image ? "i2t" : "t2i",
+        i2tCollapsed: true,
+        t2iCollapsed: true,
+        i2vCollapsed: true,
+        sceneTitle: cut.sceneTitle,
+        durationLabel: cut.durationLabel,
+        caption: cut.caption,
+        i2tPrompt: cut.i2tPrompt,
+        t2iPrompt: cut.t2iPrompt,
+        i2vStartPrompt: cut.i2vStartPrompt,
+        i2vMotionPrompt: cut.i2vMotionPrompt,
+        i2vEndPrompt: cut.i2vEndPrompt,
+        nextPanelIds: []
+      });
+    });
+
+    for (let index = 0; index < nextPanels.length - 1; index += 1) {
+      nextPanels[index].nextPanelIds = [nextPanels[index + 1].id];
+    }
+
+    panels = nextPanels.map((panel, index) => normalizePanel(panel, index));
+    project = normalizeProject({
+      ...project,
+      title: plan.projectDraft.title || project.title,
+      sequence: plan.projectDraft.sequence || project.sequence,
+      runtime: plan.projectDraft.runtime || project.runtime,
+      tone: plan.projectDraft.tone || project.tone,
+      logline: plan.projectDraft.logline || project.logline,
+      notes: plan.projectDraft.notes || project.notes,
+      aiSummary: plan.summary,
+      previewVideoUrl: plan.previewVideoUrl || project.previewVideoUrl,
+      previewPosterUrl: plan.previewPosterUrl || project.previewPosterUrl
+    });
+    selectedPanelIds = new Set(nextPanels.length > 0 ? [nextPanels[0].id] : []);
+    persistPanels();
+    persistProject();
+    renderProjectSidebar();
+    setSidebarSections("right", plan.previewVideoUrl ? ["video", "output"] : ["output"], false);
+    renderPanels({ restoreView: true });
+    setStatus(source === "api" ? "AI 응답으로 콘티 초안을 반영했습니다." : "로컬 초안으로 콘티를 구성했습니다.");
+  }
+
+  function getGeneratedPosition(index) {
+    return {
+      x: PANEL_MARGIN + index * 392,
+      y: PANEL_SAFE_TOP + 20
+    };
+  }
+
+  function buildLocalStoryboardPlan(payload) {
+    const duration = extractDuration(payload.brief);
+    const average = Math.round((duration.min + duration.max) / 2);
+    const cutCount = average <= 20 ? 5 : average <= 30 ? 6 : 8;
+    const subject = payload.brief.split(/[.!?]/)[0].trim() || "premium equestrian fashion commercial";
+    const mood = payload.brief.includes("차갑") ? "cool toned, refined, controlled" : "premium, elegant, cinematic";
+    const secondsPerCut = Math.max(2, (average / cutCount).toFixed(1));
+    const names = ["브랜드 훅", "룩 디테일", "주인공 등장", "움직임 강조", "브랜드 아이콘", "엔드 프레임", "보조 컷", "보조 엔드"];
+
+    return {
+      summary: `총 ${cutCount}컷이 적당합니다. ${duration.min}초~${duration.max}초 안에서 컷당 약 ${secondsPerCut}초로 운영하면 훅, 디테일, 움직임, 엔드 프레임까지 자연스럽게 이어집니다.`,
+      projectDraft: buildProjectDraft(payload, duration),
+      cuts: Array.from({ length: cutCount }, (_, index) => ({
+        sceneTitle: `${index + 1}. ${names[index] || `컷 ${index + 1}`}`,
+        durationLabel: `약 ${secondsPerCut}초`,
+        caption: `약 ${secondsPerCut}초 분량. ${names[index] || `컷 ${index + 1}`}의 역할을 맡는 장면으로 ${subject}의 무드와 브랜드 태도를 또렷하게 보여준다.`,
+        i2tPrompt: buildI2TPrompt(`${index + 1}. ${names[index] || `컷 ${index + 1}`}`, `${subject}, ${names[index] || `shot ${index + 1}`}, ${mood}`),
+        t2iPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, premium Korean equestrian fashion commercial still, ${mood}, editorial luxury campaign image, detailed fabric texture, cinematic composition, no text, no watermark`,
+        i2vStartPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, start frame, ${mood}, polished fashion-commercial frame`,
+        i2vMotionPrompt: `controlled camera motion, elegant pacing, preserve anatomy and costume detail, premium commercial rhythm`,
+        i2vEndPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, end frame, refined premium ad finish`
+      }))
+    };
+  }
+
+  function extractDuration(brief) {
+    const rangeMatch = brief.match(/(\d{1,3})\s*초\s*[~\-]\s*(\d{1,3})\s*초/);
+    if (rangeMatch) {
+      return { min: Number(rangeMatch[1]), max: Number(rangeMatch[2]) };
+    }
+
+    const exactMatch = brief.match(/(\d{1,3})\s*초/);
+    if (exactMatch) {
+      const seconds = Number(exactMatch[1]);
+      return { min: seconds, max: seconds };
+    }
+
+    return { min: 15, max: 30 };
+  }
+
+  function buildI2TPrompt(sceneTitle, contextText) {
+    const scene = typeof sceneTitle === "string" && sceneTitle.trim() ? sceneTitle.trim() : "shot";
+    const context = typeof contextText === "string" && contextText.trim()
+      ? contextText.trim()
+      : "premium commercial redesign";
+
+    return `Analyze the provided reference image for ${scene}. Extract the core subject, silhouette, styling anchors, composition, emotional tone, and brand-signature details. Keep what should remain recognizable, clearly note what should be redesigned, and rewrite the frame as a premium commercial still direction. Output should support a redesign flow from existing image to T2I and then I2V. Context: ${context}`;
+  }
+
+  function renderSelectionDetail() {
+    selectionDetailOutputEl.innerHTML = "";
+    const selectedPanels = panels.filter((panel) => selectedPanelIds.has(panel.id));
+
+    if (selectedPanels.length === 0) {
+      selectionDetailOutputEl.textContent = "카드를 선택하면 연결 정보와 프롬프트 요약이 표시됩니다.";
+      return;
+    }
+
+    if (selectedPanels.length > 1) {
+      selectionDetailOutputEl.textContent = `${selectedPanels.length}개의 컷이 선택되었습니다. 여러 컷의 흐름을 비교하거나 복제/삭제를 진행할 수 있습니다.`;
+      return;
+    }
+
+    const panel = selectedPanels[0];
+    const detail = document.createElement("article");
+    detail.className = "selection-detail-card";
+    detail.innerHTML = `
+      <strong>${escapeHtml(panel.sceneTitle || "선택된 컷")}</strong>
+      <p>${escapeHtml(panel.caption || "설명 없음")}</p>
+      <p>${escapeHtml([
+        panel.referenceImageId ? `레퍼런스 ${panel.referenceImageName || "연결됨"}` : "레퍼런스 없음",
+        panel.t2iPrompt ? `T2I ${panel.t2iPrompt.length}자` : "T2I 비어 있음",
+        panel.i2vStartPrompt || panel.i2vMotionPrompt || panel.i2vEndPrompt ? "I2V 준비됨" : "I2V 비어 있음"
+      ].join(" · "))}</p>
+    `;
+    selectionDetailOutputEl.appendChild(detail);
+  }
+
+  function getGeneratingStages() {
+    if (aiReferenceImages.length > 0) {
+      return [
+        {
+          title: "레퍼런스 이미지 분석 중",
+          hint: "업로드한 이미지를 읽고 유지할 핵심 피사체와 무드를 정리하고 있습니다."
+        },
+        {
+          title: "컷별 레퍼런스 매칭 중",
+          hint: "어떤 컷에 어떤 참고 이미지를 붙일지 고르고 있습니다."
+        },
+        {
+          title: "T2I / I2V 프롬프트 조합 중",
+          hint: "레퍼런스를 바탕으로 이미지 생성과 영상 생성 문장을 정리하고 있습니다."
+        },
+        {
+          title: "보드 반영 준비 중",
+          hint: "생성된 컷과 프롬프트를 카드 형태로 정리하고 있습니다."
+        }
+      ];
+    }
+
+    return [
+      {
+        title: "브리프 해석 중",
+        hint: "브랜드 무드와 장면 흐름을 읽고 적절한 컷 수를 계산하고 있습니다."
+      },
+      {
+        title: "컷 흐름 설계 중",
+        hint: "도입부터 엔드 프레임까지 이어지는 장면 순서를 정리하고 있습니다."
+      },
+      {
+        title: "T2I / I2V 프롬프트 조합 중",
+        hint: "컷별 프롬프트를 모델 흐름에 맞게 정리하고 있습니다."
+      },
+      {
+        title: "보드 반영 준비 중",
+        hint: "생성된 카드 위치와 프롬프트 요약을 정리하고 있습니다."
+      }
+    ];
+  }
+
+  function normalizePlan(rawPlan, payload) {
+    const rawCuts = Array.isArray(rawPlan?.cuts) ? rawPlan.cuts : [];
+    const cuts = rawCuts.length > 0 ? rawCuts : buildLocalStoryboardPlan(payload).cuts;
+    const projectDraft = normalizeProjectDraft(rawPlan?.projectDraft, payload, cuts);
+
+    return {
+      summary: typeof rawPlan?.summary === "string" && rawPlan.summary.trim()
+        ? rawPlan.summary.trim()
+        : "브리프를 기반으로 컷 흐름과 생성 프롬프트 초안을 만들었습니다.",
+      previewVideoUrl: typeof rawPlan?.previewVideoUrl === "string" ? rawPlan.previewVideoUrl : "",
+      previewPosterUrl: typeof rawPlan?.previewPosterUrl === "string" ? rawPlan.previewPosterUrl : "",
+      projectDraft,
+      cuts: cuts.map((cut, index) => ({
+        sceneTitle: typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
+        durationLabel: typeof cut.durationLabel === "string" ? cut.durationLabel : "",
+        caption: withDurationInCaption(
+          typeof cut.caption === "string" ? cut.caption : "",
+          typeof cut.durationLabel === "string" ? cut.durationLabel : ""
+        ),
+        referenceImageIndex: Number.isInteger(cut.referenceImageIndex) ? cut.referenceImageIndex : -1,
+        t2iPrompt: typeof cut.t2iPrompt === "string" ? cut.t2iPrompt : "",
+        i2vStartPrompt: typeof cut.i2vStartPrompt === "string" ? cut.i2vStartPrompt : "",
+        i2vMotionPrompt: typeof cut.i2vMotionPrompt === "string" ? cut.i2vMotionPrompt : "",
+        i2vEndPrompt: typeof cut.i2vEndPrompt === "string" ? cut.i2vEndPrompt : ""
+      }))
+    };
+  }
+
+  function resolveReferenceAssignment(rawIndex, fallbackIndex = 0) {
+    if (aiReferenceImages.length === 0) {
+      return null;
+    }
+
+    const candidateIndex = Number.isInteger(rawIndex) && rawIndex >= 0
+      ? rawIndex
+      : fallbackIndex % aiReferenceImages.length;
+    const safeIndex = Math.min(aiReferenceImages.length - 1, Math.max(0, candidateIndex));
+    const image = aiReferenceImages[safeIndex];
+
+    return image
+      ? {
+          id: image.id,
+          name: image.name || `레퍼런스 ${safeIndex + 1}`
+        }
+      : null;
+  }
+
+  function applyStoryboardPlan(plan, source) {
+    const nextPanels = plan.cuts.map((cut, index) => {
+      const position = getGeneratedPosition(index);
+      const existing = panels[index];
+      const referenceAssignment = resolveReferenceAssignment(cut.referenceImageIndex, index);
+
+      return createEmptyPanel({
+        id: existing?.id || createId(),
+        x: position.x,
+        y: position.y,
+        z: index + 1,
+        image: existing?.image || "",
+        fileName: existing?.fileName || "",
+        viewMode: "t2i",
+        t2iCollapsed: false,
+        i2vCollapsed: true,
+        sceneTitle: cut.sceneTitle,
+        durationLabel: cut.durationLabel,
+        caption: cut.caption,
+        referenceImageId: referenceAssignment?.id || "",
+        referenceImageName: referenceAssignment?.name || "",
+        t2iPrompt: cut.t2iPrompt,
+        i2vStartPrompt: cut.i2vStartPrompt,
+        i2vMotionPrompt: cut.i2vMotionPrompt,
+        i2vEndPrompt: cut.i2vEndPrompt,
+        nextPanelIds: []
+      });
+    });
+
+    for (let index = 0; index < nextPanels.length - 1; index += 1) {
+      nextPanels[index].nextPanelIds = [nextPanels[index + 1].id];
+    }
+
+    panels = nextPanels.map((panel, index) => normalizePanel(panel, index));
+    project = normalizeProject({
+      ...project,
+      title: plan.projectDraft.title || project.title,
+      sequence: plan.projectDraft.sequence || project.sequence,
+      runtime: plan.projectDraft.runtime || project.runtime,
+      tone: plan.projectDraft.tone || project.tone,
+      logline: plan.projectDraft.logline || project.logline,
+      notes: plan.projectDraft.notes || project.notes,
+      aiSummary: plan.summary,
+      previewVideoUrl: plan.previewVideoUrl || project.previewVideoUrl,
+      previewPosterUrl: plan.previewPosterUrl || project.previewPosterUrl
+    });
+    selectedPanelIds = new Set(nextPanels.length > 0 ? [nextPanels[0].id] : []);
+    persistPanels();
+    persistProject();
+    renderProjectSidebar();
+    setSidebarSections("right", plan.previewVideoUrl ? ["video", "output"] : ["output"], false);
+    renderPanels({ restoreView: true });
+    setStatus(source === "api" ? "AI 응답으로 콘티 초안을 반영했습니다." : "로컬 초안으로 콘티를 구성했습니다.");
+  }
+
+  function buildLocalStoryboardPlan(payload) {
+    const duration = extractDuration(payload.brief);
+    const average = Math.round((duration.min + duration.max) / 2);
+    const cutCount = average <= 20 ? 5 : average <= 30 ? 6 : 8;
+    const subject = payload.brief.split(/[.!?]/)[0].trim() || "premium equestrian fashion commercial";
+    const mood = payload.brief.includes("차갑")
+      ? "cool toned, refined, controlled"
+      : "premium, elegant, cinematic";
+    const secondsPerCut = Math.max(2, (average / cutCount).toFixed(1));
+    const names = ["브랜드 훅", "루트 샷", "주인공 등장", "디테일 강조", "브랜드 아이콘", "엔드 프레임", "보조 컷", "보조 무드"];
+    const referenceCount = Number(payload?.referenceImageCount) || 0;
+
+    return {
+      summary: `총 ${cutCount}컷이 적당합니다. ${duration.min}초~${duration.max}초 안에서 컷당 약 ${secondsPerCut}초로 운영하면 브랜드 무드와 엔드 프레임까지 자연스럽게 이어집니다.`,
+      projectDraft: buildProjectDraft(payload, duration),
+      cuts: Array.from({ length: cutCount }, (_, index) => ({
+        sceneTitle: `${index + 1}. ${names[index] || `컷 ${index + 1}`}`,
+        durationLabel: `약 ${secondsPerCut}초`,
+        caption: `약 ${secondsPerCut}초 분량. ${names[index] || `컷 ${index + 1}`}에서 ${subject}의 무드와 브랜드 톤을 또렷하게 보여줍니다.`,
+        referenceImageIndex: referenceCount > 0 ? index % referenceCount : -1,
+        t2iPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, premium Korean commercial still, ${mood}, preserve the core styling and subject anchors from the matched reference image, elevate it into an ad-ready frame, detailed material texture, no text, no watermark`,
+        i2vStartPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, start frame, ${mood}, reference-informed fashion commercial opening frame`,
+        i2vMotionPrompt: `controlled camera motion, premium editorial pacing, preserve subject silhouette and key styling anchors from the matched reference image`,
+        i2vEndPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, end frame, refined brand-commercial finish`
+      }))
+    };
+  }
+
+  function renderAiReferenceImages() {
+    if (!aiReferenceListEl || !aiReferenceCountEl) {
+      return;
+    }
+
+    aiReferenceCountEl.textContent = `${aiReferenceImages.length} / ${AI_REFERENCE_IMAGE_LIMIT}`;
+    aiReferenceListEl.innerHTML = "";
+    aiReferenceListEl.hidden = aiReferenceImages.length === 0;
+
+    aiReferenceImages.forEach((image, imageIndex) => {
+      const item = document.createElement("article");
+      item.className = "ai-reference-item";
+      item.innerHTML = `
+        <img class="ai-reference-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
+        <button class="ai-reference-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6L18 18M18 6L6 18"></path>
+          </svg>
+        </button>
+        <div class="ai-reference-meta">
+          <strong class="ai-reference-name">${escapeHtml(image.name || "reference.jpg")}</strong>
+          <span class="ai-reference-size">${escapeHtml(`${image.width}×${image.height}`)}</span>
+        </div>
+      `;
+      aiReferenceListEl.appendChild(item);
+    });
+  }
+
+  async function processAiReferenceFile(file) {
+    const dataUrl = await readFileAsDataUrl(file);
+    const image = await loadImageElement(dataUrl);
+    const maxSize = 640;
+    const ratio = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+    const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return null;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(image, 0, 0, width, height);
+
+    const sampleSize = 18;
+    const sampleCanvas = document.createElement("canvas");
+    const sampleContext = sampleCanvas.getContext("2d");
+    let accentRgb = "37 99 235";
+
+    if (sampleContext) {
+      sampleCanvas.width = sampleSize;
+      sampleCanvas.height = sampleSize;
+      sampleContext.drawImage(image, 0, 0, sampleSize, sampleSize);
+      const pixelData = sampleContext.getImageData(0, 0, sampleSize, sampleSize).data;
+      let redTotal = 0;
+      let greenTotal = 0;
+      let blueTotal = 0;
+      let visiblePixels = 0;
+
+      for (let index = 0; index < pixelData.length; index += 4) {
+        const alpha = pixelData[index + 3];
+        if (alpha < 12) {
+          continue;
+        }
+        redTotal += pixelData[index];
+        greenTotal += pixelData[index + 1];
+        blueTotal += pixelData[index + 2];
+        visiblePixels += 1;
+      }
+
+      if (visiblePixels > 0) {
+        accentRgb = `${Math.round(redTotal / visiblePixels)} ${Math.round(greenTotal / visiblePixels)} ${Math.round(blueTotal / visiblePixels)}`;
+      }
+    }
+
+    return {
+      id: createId(),
+      name: file.name,
+      mimeType: "image/jpeg",
+      width,
+      height,
+      accentRgb,
+      dataUrl: canvas.toDataURL("image/jpeg", 0.74)
+    };
+  }
+
+  async function persistAiReferenceImages() {
+    try {
+      await saveAiReferenceImagesToIndexedDb(aiReferenceImages);
+      try {
+        window.sessionStorage.removeItem(AI_REFERENCE_IMAGES_STORAGE_KEY);
+      } catch {}
+      return true;
+    } catch {
+      setStatus("레퍼런스 이미지를 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.", "warning");
+      return false;
+    }
+  }
+
+  function getAiReferenceThumbSize(count) {
+    if (count <= 1) {
+      return 116;
+    }
+    if (count <= 2) {
+      return 98;
+    }
+    if (count <= 4) {
+      return 78;
+    }
+    if (count <= 6) {
+      return 64;
+    }
+    return 46;
+  }
+
+  function openReferenceLightbox(referenceImage, title = "") {
+    if (!referenceLightboxEl || !referenceLightboxImageEl) {
+      return;
+    }
+
+    const imageTitle = title || referenceImage?.name || "레퍼런스 이미지";
+    referenceLightboxTitleEl.textContent = imageTitle;
+    referenceLightboxImageEl.src = referenceImage?.dataUrl || "";
+    referenceLightboxImageEl.alt = imageTitle;
+    if (referenceLightboxMetaEl) {
+      referenceLightboxMetaEl.textContent = referenceImage
+        ? [referenceImage.name, `${referenceImage.width} x ${referenceImage.height}`].filter(Boolean).join(" · ")
+        : "";
+    }
+    referenceLightboxEl.hidden = false;
+    referenceLightboxEl.setAttribute("aria-hidden", "false");
+    window.setTimeout(() => {
+      referenceLightboxCloseEl?.focus();
+    }, 0);
+  }
+
+  function closeReferenceLightbox() {
+    if (!referenceLightboxEl) {
+      return;
+    }
+
+    referenceLightboxEl.hidden = true;
+    referenceLightboxEl.setAttribute("aria-hidden", "true");
+    if (referenceLightboxImageEl) {
+      referenceLightboxImageEl.removeAttribute("src");
+      referenceLightboxImageEl.alt = "";
+    }
+    if (referenceLightboxMetaEl) {
+      referenceLightboxMetaEl.textContent = "";
+    }
+  }
+
+  function renderAiReferenceImages() {
+    if (!aiReferenceCountEl || !aiReferenceDropzoneEl) {
+      return;
+    }
+
+    const count = aiReferenceImages.length;
+    const usageMap = getReferenceUsageMap();
+    aiReferenceCountEl.textContent = `${count} / ${AI_REFERENCE_IMAGE_LIMIT}`;
+
+    if (aiReferenceListEl) {
+      aiReferenceListEl.innerHTML = "";
+      aiReferenceListEl.hidden = true;
+    }
+
+    if (!aiReferenceInlineGridEl) {
+      aiReferenceDropzoneEl.classList.toggle("has-images", false);
+      return;
+    }
+
+    aiReferenceInlineGridEl.innerHTML = "";
+    aiReferenceInlineGridEl.hidden = count === 0;
+    aiReferenceDropzoneEl.classList.toggle("has-images", count > 0);
+    aiReferenceDropzoneEl.style.setProperty("--reference-thumb-size", `${getAiReferenceThumbSize(count)}px`);
+
+    aiReferenceImages.forEach((image) => {
+      const item = document.createElement("article");
+      item.className = "ai-reference-inline-item";
+      item.title = image.name || "reference image";
+      item.dataset.referencePreview = image.id;
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("aria-label", `${image.name || "레퍼런스 이미지"} 확대 보기`);
+      item.innerHTML = `
+        <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
+        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6L18 18M18 6L6 18"></path>
+          </svg>
+        </button>
+      `;
+      aiReferenceInlineGridEl.appendChild(item);
+    });
+  }
+
+  function renderAiReferenceImages() {
+    if (!aiReferenceCountEl || !aiReferenceDropzoneEl) {
+      return;
+    }
+
+    const count = aiReferenceImages.length;
+    const usageMap = getReferenceUsageMap();
+    aiReferenceCountEl.textContent = `${count} / ${AI_REFERENCE_IMAGE_LIMIT}`;
+
+    if (aiReferenceListEl) {
+      aiReferenceListEl.innerHTML = "";
+      aiReferenceListEl.hidden = true;
+    }
+
+    if (!aiReferenceInlineGridEl) {
+      aiReferenceDropzoneEl.classList.toggle("has-images", false);
+      return;
+    }
+
+    aiReferenceInlineGridEl.innerHTML = "";
+    aiReferenceInlineGridEl.hidden = count === 0;
+    aiReferenceDropzoneEl.classList.toggle("has-images", count > 0);
+    aiReferenceDropzoneEl.style.setProperty("--reference-thumb-size", `${getAiReferenceThumbSize(count)}px`);
+
+    aiReferenceImages.forEach((image, imageIndex) => {
+      const orderLabel = String(imageIndex + 1).padStart(2, "0");
+      const usageLabels = usageMap.get(image.id) ?? [];
+      const visibleUsageLabels = usageLabels.slice(0, 2);
+      const extraUsageCount = Math.max(0, usageLabels.length - visibleUsageLabels.length);
+      const item = document.createElement("article");
+      item.className = "ai-reference-inline-item";
+      item.title = image.name || "reference image";
+      item.dataset.referencePreview = image.id;
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("aria-label", `${image.name || "레퍼런스 이미지"} 확대 보기`);
+      item.style.setProperty("--reference-accent-rgb", image.accentRgb || "37 99 235");
+      item.innerHTML = `
+        <span class="ai-reference-inline-order">${orderLabel}</span>
+        <div class="ai-reference-inline-photo">
+          <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
+        </div>
+        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6L18 18M18 6L6 18"></path>
+          </svg>
+        </button>
+        <div class="ai-reference-inline-footer">
+          <span class="ai-reference-inline-ref">REF ${orderLabel}</span>
+          <div class="ai-reference-inline-scenes">
+            ${visibleUsageLabels.map((label) => `<span class="ai-reference-inline-scene-tag">${escapeHtml(label)}</span>`).join("")}
+            ${extraUsageCount > 0 ? `<span class="ai-reference-inline-scene-tag">+${extraUsageCount}</span>` : ""}
+          </div>
+        </div>
+      `;
+      aiReferenceInlineGridEl.appendChild(item);
+    });
+  }
+
+  function renderAiOutputs() {
+    aiCutCountOutputEl.textContent = panels.length > 0 ? String(panels.length) : "-";
+
+    if (project.aiBrief?.trim()) {
+      const referenceMeta = aiReferenceImages.length > 0
+        ? ` · 레퍼런스 ${aiReferenceImages.length}장 · iw ${sanitizeReferenceWeight(project.referenceWeight)}`
+        : "";
+      aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 브리프 초안 준비 완료${referenceMeta}`;
+    } else {
+      aiPlanMetaEl.textContent = "브리프와 레퍼런스 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
+    }
+
+    aiSummaryOutputEl.textContent = project.aiSummary?.trim()
+      ? project.aiSummary
+      : "브리프를 넣고 생성하면 전체 연출 방향과 AI 결과가 여기에 정리됩니다.";
+
+    aiSequenceOutputEl.innerHTML = "";
+    panels.forEach((panel, index) => {
+      const item = document.createElement("article");
+      item.className = "sequence-item";
+      item.innerHTML = `
+        <span class="sequence-index">${index + 1}</span>
+        <div>
+          <strong>${escapeHtml(panel.sceneTitle || `컷 ${index + 1}`)}</strong>
+          <p>${escapeHtml(composeSequenceText(panel))}</p>
+        </div>
+      `;
+      aiSequenceOutputEl.appendChild(item);
+    });
+
+    if (panels.length === 0) {
+      const emptyItem = document.createElement("article");
+      emptyItem.className = "sequence-item sequence-item--empty";
+      emptyItem.innerHTML = `
+        <span class="sequence-index">+</span>
+        <div>
+          <strong>아직 생성된 컷이 없습니다</strong>
+          <p>브리프와 레퍼런스 이미지를 넣고 AI 콘티 초안 생성을 눌러주세요.</p>
+        </div>
+      `;
+      aiSequenceOutputEl.appendChild(emptyItem);
+    }
+  }
+
+  function getReferenceUsageMap() {
+    const usageMap = new Map();
+
+    panels.forEach((panel, index) => {
+      if (!panel.referenceImageId) {
+        return;
+      }
+
+      const usageList = usageMap.get(panel.referenceImageId) ?? [];
+      usageList.push({
+        label: `S${String(index + 1).padStart(2, "0")}`,
+        panelId: panel.id
+      });
+      usageMap.set(panel.referenceImageId, usageList);
+    });
+
+    return usageMap;
+  }
+
+  function renderAiReferenceImages() {
+    if (!aiReferenceCountEl || !aiReferenceDropzoneEl) {
+      return;
+    }
+
+    const count = aiReferenceImages.length;
+    const usageMap = getReferenceUsageMap();
+    aiReferenceCountEl.textContent = `${count} / ${AI_REFERENCE_IMAGE_LIMIT}`;
+
+    if (aiReferenceListEl) {
+      aiReferenceListEl.innerHTML = "";
+      aiReferenceListEl.hidden = true;
+    }
+
+    if (!aiReferenceInlineGridEl) {
+      aiReferenceDropzoneEl.classList.toggle("has-images", false);
+      return;
+    }
+
+    aiReferenceInlineGridEl.innerHTML = "";
+    aiReferenceInlineGridEl.hidden = count === 0;
+    aiReferenceDropzoneEl.classList.toggle("has-images", count > 0);
+    aiReferenceDropzoneEl.style.setProperty("--reference-thumb-size", `${getAiReferenceThumbSize(count)}px`);
+
+    aiReferenceImages.forEach((image, imageIndex) => {
+      const orderLabel = String(imageIndex + 1).padStart(2, "0");
+      const usageEntries = usageMap.get(image.id) ?? [];
+      const visibleUsageEntries = usageEntries.slice(0, 2);
+      const extraUsageCount = Math.max(0, usageEntries.length - visibleUsageEntries.length);
+      const item = document.createElement("article");
+      item.className = "ai-reference-inline-item";
+      item.title = image.name || "reference image";
+      item.dataset.referencePreview = image.id;
+      item.draggable = true;
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("aria-label", `${image.name || "레퍼런스 이미지"} 크게 보기`);
+      item.style.setProperty("--reference-accent-rgb", image.accentRgb || "37 99 235");
+      item.innerHTML = `
+        <span class="ai-reference-inline-order">${orderLabel}</span>
+        <div class="ai-reference-inline-photo">
+          <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
+        </div>
+        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6L18 18M18 6L6 18"></path>
+          </svg>
+        </button>
+        <div class="ai-reference-inline-footer">
+          <span class="ai-reference-inline-ref">REF ${orderLabel}</span>
+          <div class="ai-reference-inline-scenes">
+            ${visibleUsageEntries.map((entry) => `
+              <span
+                class="ai-reference-inline-scene-tag"
+                role="button"
+                tabindex="0"
+                data-focus-panel-id="${escapeHtml(entry.panelId)}"
+                aria-label="${escapeHtml(entry.label)} 컷으로 이동"
+              >${escapeHtml(entry.label)}</span>
+            `).join("")}
+            ${extraUsageCount > 0 ? `<span class="ai-reference-inline-scene-tag">+${extraUsageCount}</span>` : ""}
+          </div>
+        </div>
+      `;
+      aiReferenceInlineGridEl.appendChild(item);
+    });
+  }
+
+  function initializeReferenceInlineInteractions() {
+    if (!aiReferenceDropzoneEl || aiReferenceDropzoneEl.dataset.inlineInteractionsReady === "true") {
+      return;
+    }
+
+    aiReferenceDropzoneEl.dataset.inlineInteractionsReady = "true";
+
+    aiReferenceDropzoneEl.addEventListener("click", (event) => {
+      const sceneTag = event.target.closest("[data-focus-panel-id]");
+      if (!sceneTag) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      focusPanelFromReferenceTag(sceneTag.dataset.focusPanelId);
+    }, true);
+
+    aiReferenceDropzoneEl.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      const sceneTag = event.target.closest("[data-focus-panel-id]");
+      if (!sceneTag) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      focusPanelFromReferenceTag(sceneTag.dataset.focusPanelId);
+    }, true);
+
+    aiReferenceInlineGridEl?.addEventListener("dragstart", (event) => {
+      const item = event.target.closest(".ai-reference-inline-item[data-reference-preview]");
+      if (!item) {
+        return;
+      }
+
+      draggedReferenceImageId = item.dataset.referencePreview || "";
+      item.classList.add("is-dragging");
+      event.dataTransfer?.setData("text/plain", draggedReferenceImageId);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+      }
+    });
+
+    aiReferenceInlineGridEl?.addEventListener("dragover", (event) => {
+      if (!draggedReferenceImageId) {
+        return;
+      }
+
+      const targetItem = event.target.closest(".ai-reference-inline-item[data-reference-preview]");
+      if (!targetItem || targetItem.dataset.referencePreview === draggedReferenceImageId) {
+        return;
+      }
+
+      event.preventDefault();
+      syncReferenceDropTarget(targetItem.dataset.referencePreview);
+    });
+
+    aiReferenceInlineGridEl?.addEventListener("drop", async (event) => {
+      if (!draggedReferenceImageId) {
+        return;
+      }
+
+      const targetItem = event.target.closest(".ai-reference-inline-item[data-reference-preview]");
+      if (!targetItem) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const targetId = targetItem.dataset.referencePreview || "";
+      clearReferenceDropTarget();
+      const sourceId = draggedReferenceImageId;
+      draggedReferenceImageId = "";
+      await reorderAiReferenceImages(sourceId, targetId);
+    });
+
+    aiReferenceInlineGridEl?.addEventListener("dragend", () => {
+      draggedReferenceImageId = "";
+      clearReferenceDropTarget();
+    });
+
+    aiReferenceInlineGridEl?.addEventListener("dragleave", (event) => {
+      const relatedTarget = event.relatedTarget;
+      if (relatedTarget instanceof Node && aiReferenceInlineGridEl.contains(relatedTarget)) {
+        return;
+      }
+      clearReferenceDropTarget();
+    });
+  }
+
+  function syncReferenceDropTarget(targetId) {
+    aiReferenceInlineGridEl?.querySelectorAll(".ai-reference-inline-item").forEach((item) => {
+      const isDragging = item.dataset.referencePreview === draggedReferenceImageId;
+      const isDropTarget = item.dataset.referencePreview === targetId;
+      item.classList.toggle("is-dragging", isDragging);
+      item.classList.toggle("is-drop-target", isDropTarget);
+    });
+  }
+
+  function clearReferenceDropTarget() {
+    aiReferenceInlineGridEl?.querySelectorAll(".ai-reference-inline-item").forEach((item) => {
+      item.classList.remove("is-dragging", "is-drop-target");
+    });
+  }
+
+  async function reorderAiReferenceImages(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) {
+      return;
+    }
+
+    const sourceIndex = aiReferenceImages.findIndex((image) => image.id === sourceId);
+    const targetIndex = aiReferenceImages.findIndex((image) => image.id === targetId);
+    if (sourceIndex === -1 || targetIndex === -1) {
+      return;
+    }
+
+    pushHistoryState();
+    const nextImages = [...aiReferenceImages];
+    const [movedImage] = nextImages.splice(sourceIndex, 1);
+    nextImages.splice(targetIndex, 0, movedImage);
+    aiReferenceImages = nextImages;
+    await persistAiReferenceImages();
+    renderAiReferenceImages();
+    updateHistoryUI();
+    setStatus("레퍼런스 이미지 순서를 변경했습니다.");
+  }
+
+  function focusPanelFromReferenceTag(panelId) {
+    if (!panelId || !getPanelById(panelId)) {
+      return;
+    }
+
+    setSelection([panelId]);
+    renderSelectionDetail();
+    setSidebarSections("right", Array.from(new Set([...activeRightSidebarSections, "selection"])), false);
+    focusPanel(panelId);
+    setStatus("해당 씬으로 이동했습니다.");
+  }
+
+  function createWorkspaceExportSnapshot() {
+    return {
+      version: "shonode-workspace-v1",
+      exportedAt: new Date().toISOString(),
+      project: cloneProject(),
+      panels: panels.map((panel, index) => normalizePanel(panel, index)),
+      referenceImages: aiReferenceImages.map((image) => ({ ...image })),
+      selection: {
+        panelIds: Array.from(selectedPanelIds)
+      },
+      view: {
+        zoom,
+        scrollLeft: canvasViewport.scrollLeft,
+        scrollTop: canvasViewport.scrollTop
+      },
+      sidebar: {
+        leftSections: [...activeLeftSidebarSections],
+        rightSections: [...activeRightSidebarSections],
+        leftRailCollapsed,
+        rightRailCollapsed
+      }
+    };
+  }
+
+  function sanitizeWorkspaceFileName(name) {
+    const base = (name || "shonode-workspace")
+      .replace(/[\\/:*?"<>|]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return base || "shonode-workspace";
+  }
+
+  async function handleExportWorkspace() {
+    const snapshot = createWorkspaceExportSnapshot();
+    const fileName = `${sanitizeWorkspaceFileName(project.title)}-${new Date().toISOString().slice(0, 10)}.shonode`;
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/x-shonode+json" });
+    const url = URL.createObjectURL(blob);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = url;
+    downloadLink.download = fileName;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setStatus("프로젝트를 내보냈습니다.");
+  }
+
+  async function handleImportWorkspaceInputChange(event) {
+    const file = event.target?.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const shouldImport = await openConfirmDialog({
+        tone: "danger",
+        eyebrow: "프로젝트 가져오기",
+        title: "현재 작업 위에 불러올까요?",
+        description: "현재 워크스페이스를 새 프로젝트 내용으로 덮어씁니다. 불러오기 전에 내보내기로 백업할 수 있습니다.",
+        confirmLabel: "불러오기"
+      });
+
+      if (!shouldImport) {
+        return;
+      }
+
+      const text = await file.text();
+      const snapshot = JSON.parse(text);
+      await importWorkspaceSnapshot(snapshot);
+    } catch (error) {
+      console.warn("Failed to import workspace snapshot.", error);
+      setStatus("프로젝트 파일을 불러오지 못했습니다.", "warning");
+    } finally {
+      if (event.target) {
+        event.target.value = "";
+      }
+    }
+  }
+
+  async function importWorkspaceSnapshot(snapshot) {
+    const snapshotPanels = Array.isArray(snapshot?.panels) && snapshot.panels.length > 0
+      ? snapshot.panels
+      : createDefaultPanels();
+    const snapshotProject = snapshot?.project && typeof snapshot.project === "object"
+      ? snapshot.project
+      : getDefaultProject();
+    const snapshotReferenceImages = Array.isArray(snapshot?.referenceImages)
+      ? snapshot.referenceImages
+      : Array.isArray(snapshot?.aiReferenceImages)
+        ? snapshot.aiReferenceImages
+        : [];
+    const safeReferenceImages = snapshotReferenceImages
+      .filter((image) => typeof image?.dataUrl === "string")
+      .slice(0, AI_REFERENCE_IMAGE_LIMIT)
+      .map((image, index) => ({
+        id: typeof image.id === "string" ? image.id : createId(),
+        name: typeof image.name === "string" ? image.name : `reference-${index + 1}.jpg`,
+        mimeType: typeof image.mimeType === "string" ? image.mimeType : "image/jpeg",
+        width: Number.isFinite(image.width) ? image.width : 0,
+        height: Number.isFinite(image.height) ? image.height : 0,
+        dataUrl: image.dataUrl,
+        accentRgb: typeof image.accentRgb === "string" ? image.accentRgb : ""
+      }));
+    const hydratedReferenceImages = await ensureReferenceImageAccentColors(safeReferenceImages);
+    const sidebarSnapshot = snapshot?.sidebar && typeof snapshot.sidebar === "object" ? snapshot.sidebar : {};
+    const viewSnapshot = snapshot?.view && typeof snapshot.view === "object" ? snapshot.view : {};
+    const selectionIds = Array.isArray(snapshot?.selection?.panelIds)
+      ? snapshot.selection.panelIds
+      : Array.isArray(snapshot?.selectedPanelIds)
+        ? snapshot.selectedPanelIds
+        : [];
+
+    panels = snapshotPanels.map((panel, index) => normalizePanel(panel, index));
+    project = normalizeProject(snapshotProject);
+    aiReferenceImages = hydratedReferenceImages.images;
+    selectedPanelIds = new Set(selectionIds.filter((panelId) => panels.some((panel) => panel.id === panelId)));
+    activeLeftSidebarSections = getSidebarSectionIds("left").filter((sectionId) => (sidebarSnapshot.leftSections ?? []).includes(sectionId));
+    activeRightSidebarSections = getSidebarSectionIds("right").filter((sectionId) => (sidebarSnapshot.rightSections ?? []).includes(sectionId));
+    leftRailCollapsed = Boolean(sidebarSnapshot.leftRailCollapsed) && activeLeftSidebarSections.length === 0;
+    rightRailCollapsed = Boolean(sidebarSnapshot.rightRailCollapsed) && activeRightSidebarSections.length === 0;
+    zoom = clamp(Number.isFinite(viewSnapshot.zoom) ? viewSnapshot.zoom : 1, MIN_ZOOM, MAX_ZOOM);
+    pendingInitialScroll = {
+      left: Number.isFinite(viewSnapshot.scrollLeft) ? viewSnapshot.scrollLeft : 0,
+      top: Number.isFinite(viewSnapshot.scrollTop) ? viewSnapshot.scrollTop : 0
+    };
+    undoStack = [];
+    redoStack = [];
+    activeHistoryGroups.clear();
+
+    persistSidebarSections("left", activeLeftSidebarSections);
+    persistSidebarSections("right", activeRightSidebarSections);
+    persistRailCollapsed("left", leftRailCollapsed);
+    persistRailCollapsed("right", rightRailCollapsed);
+    await persistAiReferenceImages();
+    persistPanels();
+    persistProject();
+    updateZoomUI();
+    renderProjectSidebar();
+    applySidebarRailState(false);
+    updateHistoryUI();
+    renderPanels({ restoreView: true });
+    window.setTimeout(() => {
+      persistViewState();
+    }, 120);
+    setStatus("프로젝트를 불러왔습니다.");
+  }
+
+  function buildSelectedPanelsPayload(selectedPanels) {
+    return selectedPanels.map((panel) => ({
+      panelId: panel.id,
+      sceneTitle: panel.sceneTitle || "",
+      durationLabel: panel.durationLabel || "",
+      caption: panel.caption || "",
+      referenceImageId: panel.referenceImageId || "",
+      referenceImageName: panel.referenceImageName || "",
+      referenceImageIndex: panel.referenceImageId
+        ? aiReferenceImages.findIndex((image) => image.id === panel.referenceImageId)
+        : -1,
+      t2iPrompt: panel.t2iPrompt || "",
+      i2vStartPrompt: panel.i2vStartPrompt || "",
+      i2vMotionPrompt: panel.i2vMotionPrompt || "",
+      i2vEndPrompt: panel.i2vEndPrompt || "",
+      hasImage: Boolean(panel.image),
+      fileName: panel.fileName || ""
+    }));
+  }
+
+  function createSelectedFallbackCut(panel, index) {
+    const sceneTitle = panel?.sceneTitle || `${index + 1}. 컷`;
+    const durationLabel = panel?.durationLabel || "약 3초";
+    const caption = withDurationInCaption(
+      panel?.caption || `${sceneTitle}을 더 광고적으로 다듬은 컷입니다.`,
+      durationLabel
+    );
+
+    return {
+      sceneTitle,
+      durationLabel,
+      caption,
+      referenceImageIndex: Number.isInteger(panel?.referenceImageIndex) ? panel.referenceImageIndex : -1,
+      t2iPrompt: panel?.t2iPrompt || "",
+      i2vStartPrompt: panel?.i2vStartPrompt || "",
+      i2vMotionPrompt: panel?.i2vMotionPrompt || "",
+      i2vEndPrompt: panel?.i2vEndPrompt || ""
+    };
+  }
+
+  function buildLocalSelectedStoryboardPlan(payload) {
+    const selectedPanels = Array.isArray(payload?.selectedPanels) ? payload.selectedPanels : [];
+    const duration = extractDuration(payload?.brief || "");
+    const averageDuration = Math.round((duration.min + duration.max) / 2) || 18;
+    const secondsPerCut = Math.max(2, Math.round(averageDuration / Math.max(selectedPanels.length, 1)));
+
+    return {
+      summary: "선택한 컷을 기준으로 프롬프트를 다시 정제했습니다.",
+      projectDraft: cloneProject(),
+      cuts: selectedPanels.map((panel, index) => {
+        const sceneTitle = panel.sceneTitle || `${index + 1}. 컷`;
+        const durationLabel = panel.durationLabel || `약 ${secondsPerCut}초`;
+        const caption = withDurationInCaption(
+          panel.caption || `${sceneTitle}의 핵심 이미지를 유지하면서 더 정교한 광고 컷으로 리디자인합니다.`,
+          durationLabel
+        );
+        const promptSeed = [
+          sceneTitle,
+          caption,
+          panel.referenceImageName ? `reference ${panel.referenceImageName}` : "",
+          payload?.brief || ""
+        ].filter(Boolean).join(", ");
+
+        return {
+          sceneTitle,
+          durationLabel,
+          caption,
+          referenceImageIndex: Number.isInteger(panel.referenceImageIndex) ? panel.referenceImageIndex : -1,
+          t2iPrompt: panel.t2iPrompt?.trim()
+            ? `${panel.t2iPrompt.trim()}, refined commercial lighting, preserve key reference anchors, polished premium composition, no text, no watermark`
+            : `${promptSeed}, premium commercial still, preserve the original reference styling, elegant lighting, polished composition, no text, no watermark`,
+          i2vStartPrompt: panel.i2vStartPrompt?.trim()
+            ? `${panel.i2vStartPrompt.trim()}, refined opening frame`
+            : `${promptSeed}, opening frame, premium commercial look`,
+          i2vMotionPrompt: panel.i2vMotionPrompt?.trim()
+            ? `${panel.i2vMotionPrompt.trim()}, cleaner camera rhythm, smoother motion arc`
+            : "subtle cinematic camera move, controlled subject motion, refined pacing, premium commercial polish",
+          i2vEndPrompt: panel.i2vEndPrompt?.trim()
+            ? `${panel.i2vEndPrompt.trim()}, refined closing frame`
+            : `${promptSeed}, closing frame, polished brand finish`
+        };
+      })
+    };
+  }
+
+  function normalizeSelectedPlan(rawPlan, payload) {
+    const normalized = normalizePlan(rawPlan, payload);
+    const fallback = normalizePlan(buildLocalSelectedStoryboardPlan(payload), payload);
+    const targetCount = Number(payload?.selectedPanelCount) || payload?.selectedPanels?.length || 0;
+    const cuts = [];
+
+    for (let index = 0; index < targetCount; index += 1) {
+      cuts.push(
+        normalized.cuts[index] ||
+        fallback.cuts[index] ||
+        createSelectedFallbackCut(payload?.selectedPanels?.[index], index)
+      );
+    }
+
+    return {
+      ...normalized,
+      cuts
+    };
+  }
+
+  function applySelectedStoryboardPlan(plan, selectedPanels, source) {
+    const selectedPanelMap = new Map(selectedPanels.map((panel, index) => [panel.id, { panel, index }]));
+    const nextPanels = panels.map((panel, panelIndex) => {
+      const match = selectedPanelMap.get(panel.id);
+      if (!match) {
+        return panel;
+      }
+
+      const cut = plan.cuts[match.index] || createSelectedFallbackCut(match.panel, match.index);
+      const referenceAssignment = resolveReferenceAssignment(cut.referenceImageIndex, match.index);
+
+      return normalizePanel({
+        ...panel,
+        viewMode: "t2i",
+        t2iCollapsed: false,
+        i2vCollapsed: true,
+        sceneTitle: cut.sceneTitle,
+        durationLabel: cut.durationLabel,
+        caption: cut.caption,
+        referenceImageId: referenceAssignment?.id || panel.referenceImageId || "",
+        referenceImageName: referenceAssignment?.name || panel.referenceImageName || "",
+        t2iPrompt: cut.t2iPrompt,
+        i2vStartPrompt: cut.i2vStartPrompt,
+        i2vMotionPrompt: cut.i2vMotionPrompt,
+        i2vEndPrompt: cut.i2vEndPrompt
+      }, panelIndex);
+    });
+
+    panels = nextPanels;
+    project = normalizeProject({
+      ...project,
+      aiSummary: plan.summary || project.aiSummary,
+      previewVideoUrl: plan.previewVideoUrl || project.previewVideoUrl,
+      previewPosterUrl: plan.previewPosterUrl || project.previewPosterUrl
+    });
+    selectedPanelIds = new Set(selectedPanels.map((panel) => panel.id).filter((panelId) => nextPanels.some((panel) => panel.id === panelId)));
+    persistPanels();
+    persistProject();
+    renderProjectSidebar();
+    setSidebarSections(
+      "right",
+      Array.from(new Set([
+        ...(plan.previewVideoUrl ? ["video"] : []),
+        "output",
+        "selection",
+        ...activeRightSidebarSections
+      ])),
+      false
+    );
+    renderPanels({ restoreView: true });
+
+    if (selectedPanels[0]) {
+      focusPanel(selectedPanels[0].id);
+    }
+
+    setStatus(
+      source === "api"
+        ? "선택한 컷만 다시 AI 생성했습니다."
+        : "선택한 컷을 로컬 초안으로 다시 정리했습니다."
+    );
+  }
+
+  async function handleRegenerateSelectedPanels() {
+    const orderedSelectedPanels = panels.filter((panel) => selectedPanelIds.has(panel.id));
+    if (orderedSelectedPanels.length === 0) {
+      setStatus("먼저 다시 만들 컷을 선택해주세요.", "warning");
+      return;
+    }
+
+    const brief = project.aiBrief?.trim();
+    if (!brief) {
+      setSidebarSections("left", Array.from(new Set([...activeLeftSidebarSections, "ai"])), false);
+      aiBriefInputEl.focus();
+      setStatus("브리프를 먼저 입력해주세요.", "warning");
+      return;
+    }
+
+    const shouldRegenerate = await openConfirmDialog({
+      eyebrow: "선택 컷 재생성",
+      title: `${orderedSelectedPanels.length}개의 선택 컷만 다시 생성할까요?`,
+      description: "선택한 컷의 제목, 설명, T2I/I2V 프롬프트만 새로 정리합니다. 카드 위치와 연결은 그대로 유지됩니다.",
+      confirmLabel: "선택 컷 재생성"
+    });
+
+    if (!shouldRegenerate) {
+      return;
+    }
+
+    setGeneratingState(true);
+    setStatus("선택한 컷만 다시 정리하고 있습니다.");
+
+    try {
+      const payload = {
+        generationMode: "selected-panels",
+        brief,
+        project: cloneProject(),
+        selectedPanelCount: orderedSelectedPanels.length,
+        selectedPanels: buildSelectedPanelsPayload(orderedSelectedPanels),
+        referenceWeight: Number.parseFloat(sanitizeReferenceWeight(project.referenceWeight)),
+        referenceImageCount: aiReferenceImages.length,
+        referenceImages: aiReferenceImages.map((image) => ({
+          name: image.name,
+          mimeType: image.mimeType,
+          dataUrl: image.dataUrl,
+          width: image.width,
+          height: image.height
+        }))
+      };
+
+      let plan = null;
+      let source = "local";
+
+      if (window.ShotBoardAI && typeof window.ShotBoardAI.generateStoryboard === "function") {
+        try {
+          plan = await window.ShotBoardAI.generateStoryboard(payload);
+          if (plan) {
+            source = "api";
+          }
+        } catch (error) {
+          console.warn("ShotBoardAI.generateStoryboard failed for selected panels, using local fallback.", error);
+        }
+      }
+
+      if (!plan) {
+        plan = buildLocalSelectedStoryboardPlan(payload);
+      }
+
+      pushHistoryState();
+      applySelectedStoryboardPlan(normalizeSelectedPlan(plan, payload), orderedSelectedPanels, source);
+      updateHistoryUI();
+    } finally {
+      setGeneratingState(false);
+    }
+  }
+
+  initializeReferenceInlineInteractions();
+  renderAiReferenceImages();
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+})();

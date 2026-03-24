@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shonode | 영화 콘티 보드</title>
+  <link rel="icon" href="brand/shonode-mark.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header id="workspaceHeader" class="hero hero--minimal">
+      <div class="hero-bar">
+        <div class="brand-lockup" aria-label="Shonode">
+          <img class="brand-mark" src="brand/shonode-mark.svg" alt="" aria-hidden="true">
+          <div class="brand-copy">
+            <h1>Shonode</h1>
+            <p class="brand-tagline">컷을 연결해, 이야기를 설계하다.</p>
+          </div>
+        </div>
+
+        <div class="action-row action-row--minimal">
+          <input id="importWorkspaceInput" type="file" accept=".shonode,.json,application/json,application/x-shonode+json" hidden>
+          <button id="importWorkspaceButton" class="secondary-button" type="button">불러오기</button>
+          <button id="exportWorkspaceButton" class="secondary-button" type="button">내보내기</button>
+          <button id="saveWorkspaceButton" class="primary-button save-workspace-button" type="button">
+            <span id="saveWorkspaceLabel">저장</span>
+          </button>
+        </div>
+      </div>
+      <p id="statusMessage" class="status-message sr-only" data-tone="neutral">
+        준비 완료. 브리프를 넣고 AI 콘티 초안을 생성해보세요.
+      </p>
+      <span id="panelCount" class="sr-only" aria-hidden="true">6</span>
+      <button id="toggleHeaderButton" class="ghost-button toggle-header-button" type="button" aria-expanded="true" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 9L12 15L18 9"></path>
+        </svg>
+        <span id="toggleHeaderLabel">헤더 접기</span>
+      </button>
+    </header>
+
+    <main class="workspace-main">
+      <nav id="leftSidebarRail" class="sidebar-rail sidebar-rail--left" aria-label="왼쪽 사이드바 레일">
+        <div class="sidebar-rail-track">
+          <div class="sidebar-rail-buttons">
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="left" data-sidebar-target="ai" data-sidebar-label="AI 디렉터" aria-label="AI 디렉터 패널 열기" title="AI 디렉터">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3.5L14.35 8.65L19.5 11L14.35 13.35L12 18.5L9.65 13.35L4.5 11L9.65 8.65Z"></path>
+                <path d="M18.5 4.5L19.35 6.15L21 7L19.35 7.85L18.5 9.5L17.65 7.85L16 7L17.65 6.15Z"></path>
+              </svg>
+              <span class="sr-only">AI 디렉터</span>
+            </button>
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="left" data-sidebar-target="guide" data-sidebar-label="가이드" aria-label="가이드 패널 열기" title="가이드">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 5.5H18A1.5 1.5 0 0 1 19.5 7V18A1.5 1.5 0 0 1 18 19.5H8.25A2.75 2.75 0 0 1 5.5 16.75V7A1.5 1.5 0 0 1 7 5.5Z"></path>
+                <path d="M8.75 9H15.75"></path>
+                <path d="M8.75 12.5H15.75"></path>
+                <path d="M8.75 16H12.75"></path>
+              </svg>
+              <span class="sr-only">가이드</span>
+            </button>
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="left" data-sidebar-target="project" data-sidebar-label="프로젝트" aria-label="프로젝트 패널 열기" title="프로젝트">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.5 8.25A1.75 1.75 0 0 1 6.25 6.5H10.2L11.8 8.5H17.75A1.75 1.75 0 0 1 19.5 10.25V17.75A1.75 1.75 0 0 1 17.75 19.5H6.25A1.75 1.75 0 0 1 4.5 17.75Z"></path>
+                <path d="M8 12H16"></path>
+              </svg>
+              <span class="sr-only">프로젝트</span>
+            </button>
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="left" data-sidebar-target="notes" data-sidebar-label="노트" aria-label="노트 패널 열기" title="노트">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 4.5H16A1.5 1.5 0 0 1 17.5 6V18.5L14.5 16.5L12 18.5L9.5 16.5L6.5 18.5V6A1.5 1.5 0 0 1 8 4.5Z"></path>
+                <path d="M9.5 9H14.5"></path>
+                <path d="M9.5 12.5H14.5"></path>
+              </svg>
+              <span class="sr-only">노트</span>
+            </button>
+          </div>
+          <button id="leftRailToggleButton" class="sidebar-rail-toggle" type="button" aria-expanded="true" aria-label="왼쪽 레일 접기">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M16 6L10 12L16 18"></path>
+            </svg>
+            <span class="sr-only">왼쪽 레일 접기</span>
+          </button>
+        </div>
+      </nav>
+
+      <aside id="projectSidebar" class="project-sidebar side-panel side-panel--left" aria-label="프로젝트 사이드바">
+        <div class="sidebar-shell">
+          <div class="sidebar-content sidebar-content--stack">
+          <section class="sidebar-card sidebar-card--ai" data-sidebar-section="ai">
+            <div class="sidebar-card-header">
+              <p class="sidebar-eyebrow">AI Director</p>
+              <h2>브리프에서 컷 생성</h2>
+              <p class="sidebar-card-copy">두루뭉실한 설명도 컷 수와 레퍼런스 기반 T2I, I2V 흐름 초안으로 정리합니다.</p>
+            </div>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">브리프</span>
+              <textarea
+                id="aiBriefInput"
+                class="sidebar-input sidebar-textarea sidebar-textarea--brief"
+                rows="6"
+                placeholder="예: 한국의 승마패션 브랜드 광고 영상을 만들건데 영상 길이는 15초~30초 사이로 끝나는 영상을 만들고 싶어. 고급스럽고 차갑지만 힘 있는 무드였으면 좋겠어."
+              ></textarea>
+            </label>
+
+            <div class="sidebar-field">
+              <div class="sidebar-label-row">
+                <span class="sidebar-label">레퍼런스 이미지</span>
+                <span id="aiReferenceCount" class="sidebar-inline-meta">0장</span>
+              </div>
+
+              <label id="aiReferenceDropzone" class="ai-reference-dropzone" tabindex="0">
+                <input id="aiReferenceInput" type="file" accept="image/*" multiple hidden>
+                <div class="ai-reference-dropzone__copy">
+                  <strong>이미지 드래그 또는 클릭</strong>
+                  <p>참고 이미지를 최대 10장까지 넣고, 그 이미지를 바탕으로 컷별 T2I와 I2V 초안을 생성합니다.</p>
+                </div>
+                <div id="aiReferenceInlineGrid" class="ai-reference-inline-grid" hidden></div>
+              </label>
+
+              <div id="aiReferenceList" class="ai-reference-list" hidden></div>
+            </div>
+
+            <div class="sidebar-grid sidebar-grid--ai">
+              <label class="sidebar-field">
+                <span class="sidebar-label">AI 모델 메모</span>
+                <input id="aiModelInput" class="sidebar-input" type="text" value="Gemini 2.5 Flash">
+              </label>
+
+              <label class="sidebar-field">
+                <span class="sidebar-label">레퍼런스 강도</span>
+                <input
+                  id="aiReferenceWeightInput"
+                  class="sidebar-input"
+                  type="number"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value="2.0"
+                >
+              </label>
+
+              <div class="sidebar-stat-card">
+                <span class="sidebar-stat-label">추천 컷 수</span>
+                <strong id="aiCutCountOutput" class="sidebar-stat-value">-</strong>
+              </div>
+            </div>
+
+            <button id="generatePlanButton" class="primary-button sidebar-generate-button" type="button">
+              <span class="sidebar-generate-button__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 4V20M4 12H20"></path>
+                </svg>
+              </span>
+              <span id="generatePlanButtonLabel">AI 콘티 초안 생성</span>
+            </button>
+
+            <div id="aiGenerationIndicator" class="ai-generation-indicator" hidden aria-live="polite">
+              <div class="ai-generation-visual" aria-hidden="true">
+                <span class="ai-generation-orbit"></span>
+                <span class="ai-generation-core"></span>
+                <span class="ai-generation-dot ai-generation-dot--one"></span>
+                <span class="ai-generation-dot ai-generation-dot--two"></span>
+                <span class="ai-generation-dot ai-generation-dot--three"></span>
+              </div>
+              <div class="ai-generation-copy">
+                <strong id="aiGenerationStage">브리프 해석 중</strong>
+                <p id="aiGenerationHint">컷 흐름과 프롬프트를 조립하고 있습니다.</p>
+              </div>
+            </div>
+
+            <p id="aiPlanMeta" class="sidebar-meta-text">브리프를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.</p>
+          </section>
+
+          <section class="sidebar-card sidebar-card--guide" data-sidebar-section="guide">
+            <div class="sidebar-card-header">
+              <p class="sidebar-eyebrow">Guide</p>
+              <h2>연결 사용법</h2>
+            </div>
+
+            <div class="guide-list">
+              <p><strong>연결 시작</strong> 카드 오른쪽 파란 점을 잡고 다음 카드 쪽으로 드래그하세요.</p>
+              <p><strong>연결 받기</strong> 다른 카드 위에 놓거나 왼쪽 점에 꽂으면 그 컷으로 이어집니다.</p>
+              <p><strong>연결 해제</strong> 카드 아래의 `연결 지우기` 버튼으로 분기를 정리할 수 있습니다.</p>
+              <p><strong>프롬프트 접기</strong> T2I / I2V 패널 오른쪽 화살표를 눌러 카드 길이를 줄이세요.</p>
+            </div>
+          </section>
+
+          <section class="sidebar-card" data-sidebar-section="project">
+            <div class="sidebar-card-header">
+              <p class="sidebar-eyebrow">Project</p>
+              <h2>프로젝트 개요</h2>
+            </div>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">프로젝트명</span>
+              <input id="projectTitleInput" class="sidebar-input" type="text" placeholder="예: 새벽의 복도">
+            </label>
+
+            <div class="sidebar-grid">
+              <label class="sidebar-field">
+                <span class="sidebar-label">씬 / 시퀀스</span>
+                <input id="projectSequenceInput" class="sidebar-input" type="text" placeholder="Scene 01">
+              </label>
+
+              <label class="sidebar-field">
+                <span class="sidebar-label">러닝타임</span>
+                <input id="projectRuntimeInput" class="sidebar-input" type="text" placeholder="예: 90분">
+              </label>
+            </div>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">장르 / 톤</span>
+              <input id="projectToneInput" class="sidebar-input" type="text" placeholder="예: 미스터리, 차갑고 긴장감 있게">
+            </label>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">화면비</span>
+              <select id="projectAspectRatioInput" class="sidebar-input sidebar-select">
+                <option value="2.39:1">2.39:1 시네마스코프</option>
+                <option value="1.85:1">1.85:1 스탠다드</option>
+                <option value="16:9">16:9 디지털</option>
+                <option value="4:3">4:3 클래식</option>
+                <option value="9:16">9:16 세로형</option>
+              </select>
+            </label>
+          </section>
+
+          <section class="sidebar-card" data-sidebar-section="notes">
+            <div class="sidebar-card-header">
+              <p class="sidebar-eyebrow">Notes</p>
+              <h2>씬 메모</h2>
+            </div>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">로그라인 / 장면 목적</span>
+              <textarea id="projectLoglineInput" class="sidebar-input sidebar-textarea" rows="4" placeholder="이 장면에서 전달할 핵심 감정과 서사를 적어두세요."></textarea>
+            </label>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">연출 메모</span>
+              <textarea id="projectNotesInput" class="sidebar-input sidebar-textarea" rows="5" placeholder="카메라 무브, 감정선, 전환 아이디어, 색감 키워드 등을 적어두세요."></textarea>
+            </label>
+          </section>
+          </div>
+        </div>
+      </aside>
+
+      <button id="workspaceOverlay" class="workspace-overlay" type="button" aria-label="열린 사이드 패널 닫기"></button>
+
+      <section class="workspace-stage">
+        <div class="canvas-toolbar" aria-label="캔버스 도구">
+          <div class="canvas-tool-group">
+            <button id="undoButton" class="icon-tool-button" type="button" aria-label="되돌리기" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 7L4 12L9 17"></path>
+                <path d="M20 12H4"></path>
+              </svg>
+            </button>
+
+            <button id="redoButton" class="icon-tool-button" type="button" aria-label="다시 실행" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 7L20 12L15 17"></path>
+                <path d="M4 12H20"></path>
+              </svg>
+            </button>
+
+            <button id="addPanelButton" class="primary-button tool-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5V19M5 12H19"></path>
+              </svg>
+              <span>새 컷</span>
+            </button>
+
+            <button id="duplicateSelectionButton" class="secondary-button tool-button" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 9H5.75A1.75 1.75 0 0 0 4 10.75v7.5A1.75 1.75 0 0 0 5.75 20h7.5A1.75 1.75 0 0 0 15 18.25V15"></path>
+                <path d="M10.75 4h7.5A1.75 1.75 0 0 1 20 5.75v7.5A1.75 1.75 0 0 1 18.25 15h-7.5A1.75 1.75 0 0 1 9 13.25v-7.5A1.75 1.75 0 0 1 10.75 4Z"></path>
+              </svg>
+              <span>선택 복제</span>
+            </button>
+
+            <button id="regenerateSelectionButton" class="secondary-button tool-button" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3.5L14.35 8.65L19.5 11L14.35 13.35L12 18.5L9.65 13.35L4.5 11L9.65 8.65Z"></path>
+                <path d="M18.5 4.5L19.35 6.15L21 7L19.35 7.85L18.5 9.5L17.65 7.85L16 7L17.65 6.15Z"></path>
+              </svg>
+              <span>선택 재생성</span>
+            </button>
+
+            <button id="deleteSelectionButton" class="danger-button tool-button" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 7H19"></path>
+                <path d="M9 7V5.75A1.75 1.75 0 0 1 10.75 4h2.5A1.75 1.75 0 0 1 15 5.75V7"></path>
+                <path d="M7 7L8 18.25A1.75 1.75 0 0 0 9.74 20h4.52A1.75 1.75 0 0 0 16 18.25L17 7"></path>
+              </svg>
+              <span>선택 삭제</span>
+            </button>
+
+            <button id="clearSelectionButton" class="ghost-button tool-button" type="button" disabled>선택 해제</button>
+
+            <div id="selectionCountChip" class="workspace-chip is-hidden" aria-live="polite">선택 0</div>
+          </div>
+
+          <div class="canvas-tool-group">
+            <button id="zoomOutButton" class="icon-tool-button" type="button" aria-label="축소">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 12H18"></path>
+              </svg>
+            </button>
+
+            <div id="zoomPercentage" class="workspace-chip workspace-chip--zoom">100%</div>
+
+            <button id="zoomInButton" class="icon-tool-button" type="button" aria-label="확대">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 6V18M6 12H18"></path>
+              </svg>
+            </button>
+
+            <button id="fitCanvasButton" class="ghost-button tool-button" type="button">맞춤</button>
+          </div>
+        </div>
+
+        <div id="canvasViewport" class="canvas-viewport">
+          <div id="boardSizer" class="board-sizer">
+            <svg id="connectionLayer" class="connection-layer" aria-hidden="true"></svg>
+            <section id="board" class="board" aria-live="polite"></section>
+          </div>
+        </div>
+      </section>
+
+      <nav id="rightSidebarRail" class="sidebar-rail sidebar-rail--right" aria-label="오른쪽 사이드바 레일">
+        <div class="sidebar-rail-track">
+          <div class="sidebar-rail-buttons">
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="right" data-sidebar-target="video" data-sidebar-label="비디오" aria-label="비디오 패널 열기" title="비디오">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5.5 7.5A1.5 1.5 0 0 1 7 6h8A1.5 1.5 0 0 1 16.5 7.5v9A1.5 1.5 0 0 1 15 18h-8A1.5 1.5 0 0 1 5.5 16.5Z"></path>
+                <path d="M16.5 10L20 7.8V16.2L16.5 14"></path>
+              </svg>
+              <span class="sr-only">비디오</span>
+            </button>
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="right" data-sidebar-target="output" data-sidebar-label="AI 아웃풋" aria-label="AI 아웃풋 패널 열기" title="AI 아웃풋">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4.25L13.85 8.15L17.75 10L13.85 11.85L12 15.75L10.15 11.85L6.25 10L10.15 8.15Z"></path>
+                <path d="M7 17H11"></path>
+                <path d="M13 17H17"></path>
+              </svg>
+              <span class="sr-only">AI 아웃풋</span>
+            </button>
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="right" data-sidebar-target="selection" data-sidebar-label="셀렉션" aria-label="셀렉션 패널 열기" title="셀렉션">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 4.5L16.5 12L11.75 13.4L14 19.5L11.6 20.5L9.4 14.45L6 17Z"></path>
+              </svg>
+              <span class="sr-only">셀렉션</span>
+            </button>
+          </div>
+          <button id="rightRailToggleButton" class="sidebar-rail-toggle" type="button" aria-expanded="true" aria-label="오른쪽 레일 접기">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 6L14 12L8 18"></path>
+            </svg>
+            <span class="sr-only">오른쪽 레일 접기</span>
+          </button>
+        </div>
+      </nav>
+
+      <aside id="previewSidebar" class="preview-sidebar side-panel side-panel--right" aria-label="프리뷰 사이드바">
+        <div class="sidebar-shell">
+          <div class="sidebar-content sidebar-content--stack preview-content">
+          <section class="sidebar-card sidebar-card--preview" data-sidebar-section="video">
+            <div class="sidebar-card-header">
+              <p class="sidebar-eyebrow">Video</p>
+              <h2>결과 영상 확인</h2>
+              <p class="sidebar-card-copy">API가 만든 결과 영상 URL을 넣으면 바로 재생할 수 있습니다.</p>
+            </div>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">영상 URL</span>
+              <input id="previewVideoUrlInput" class="sidebar-input" type="url" placeholder="https://.../result.mp4">
+            </label>
+
+            <label class="sidebar-field">
+              <span class="sidebar-label">포스터 URL</span>
+              <input id="previewPosterUrlInput" class="sidebar-input" type="url" placeholder="https://.../poster.jpg">
+            </label>
+
+            <div class="preview-player-shell">
+              <video id="previewVideo" class="preview-video" controls playsinline></video>
+              <div id="previewVideoEmpty" class="preview-video-empty">영상 URL을 넣으면 이 자리에서 결과를 볼 수 있습니다.</div>
+            </div>
+          </section>
+
+          <section class="sidebar-card" data-sidebar-section="output">
+            <div class="sidebar-card-header">
+              <p class="sidebar-eyebrow">AI Output</p>
+              <h2>생성된 초안</h2>
+            </div>
+
+            <p id="aiSummaryOutput" class="ai-summary-output">브리프를 넣고 생성하면 전체 연출 방향이 여기에 정리됩니다.</p>
+            <div id="aiSequenceOutput" class="ai-sequence-output"></div>
+          </section>
+
+          <section class="sidebar-card" data-sidebar-section="selection">
+            <div class="sidebar-card-header">
+              <p class="sidebar-eyebrow">Selection</p>
+              <h2>선택 컷 상세</h2>
+            </div>
+
+            <div id="selectionDetailOutput" class="selection-detail-output">
+              카드를 선택하면 이곳에 컷 설명과 프롬프트 요약이 표시됩니다.
+            </div>
+          </section>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <template id="panelTemplate">
+    <article class="story-card">
+      <button class="node-port node-port--in" type="button" data-port="in" aria-label="이전 컷 연결 입력" title="연결 입력">
+        <span class="node-port-core" aria-hidden="true"></span>
+      </button>
+
+      <button class="node-port node-port--out" type="button" data-port="out" aria-label="다음 컷 연결 출력" title="연결 출력">
+        <span class="node-port-core" aria-hidden="true"></span>
+      </button>
+
+      <div class="card-header">
+        <div class="panel-handle" role="button" tabindex="0" aria-label="카드 이동 손잡이">
+          <span class="drag-handle-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="8" cy="7" r="1.4"></circle>
+              <circle cx="8" cy="12" r="1.4"></circle>
+              <circle cx="8" cy="17" r="1.4"></circle>
+              <circle cx="16" cy="7" r="1.4"></circle>
+              <circle cx="16" cy="12" r="1.4"></circle>
+              <circle cx="16" cy="17" r="1.4"></circle>
+            </svg>
+          </span>
+
+          <div class="panel-title-stack">
+            <span class="panel-scene-label">씬 01</span>
+            <strong class="panel-title">컷 1</strong>
+            <span class="panel-duration" hidden></span>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button class="subtle-button image-clear-button" type="button">이미지 지우기</button>
+
+          <button class="icon-button duplicate-panel-button" type="button" aria-label="컷 복제" title="컷 복제">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 9H5.75A1.75 1.75 0 0 0 4 10.75v7.5A1.75 1.75 0 0 0 5.75 20h7.5A1.75 1.75 0 0 0 15 18.25V15"></path>
+              <path d="M10.75 4h7.5A1.75 1.75 0 0 1 20 5.75v7.5A1.75 1.75 0 0 1 18.25 15h-7.5A1.75 1.75 0 0 1 9 13.25v-7.5A1.75 1.75 0 0 1 10.75 4Z"></path>
+            </svg>
+          </button>
+
+          <button class="icon-button delete-panel-button" type="button" aria-label="컷 삭제" title="컷 삭제">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6L18 18M18 6L6 18"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="media-stage">
+        <div class="media-switcher" role="tablist" aria-label="컷 미디어 보기">
+          <button class="media-view-button" type="button" data-view="image">IMG</button>
+          <button class="media-view-button" type="button" data-view="t2i">T2I</button>
+          <button class="media-view-button" type="button" data-view="i2v">I2V</button>
+        </div>
+
+        <label class="dropzone media-panel" data-panel-view="image" tabindex="0">
+          <input class="file-input" type="file" accept="image/*" hidden>
+          <img class="preview-image" alt="" hidden>
+          <span class="image-name" hidden></span>
+          <div class="dropzone-placeholder">
+            <p class="dropzone-title">이미지 업로드</p>
+            <p class="dropzone-subtitle">드래그 앤 드롭 또는 클릭</p>
+          </div>
+        </label>
+
+        <section class="prompt-panel media-panel" data-panel-view="t2i" hidden>
+          <div class="prompt-panel-header">
+            <div class="prompt-panel-copy">
+              <span class="prompt-platform">Nano Banana Pro 2</span>
+              <strong class="prompt-panel-title">T2I Prompt</strong>
+            </div>
+
+            <button class="icon-button prompt-toggle-button" type="button" data-prompt-kind="t2i" aria-expanded="true" aria-label="T2I 프롬프트 접기" title="프롬프트 접기">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 10L12 15L17 10"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="prompt-panel-body">
+            <div class="reference-bookmark" hidden>
+              <div class="reference-bookmark-thumb-wrap">
+                <img class="reference-bookmark-thumb" alt="" hidden>
+              </div>
+              <div class="reference-bookmark-copy">
+                <span class="reference-bookmark-label">Reference</span>
+                <strong class="reference-bookmark-name">연결된 레퍼런스</strong>
+              </div>
+            </div>
+            <textarea class="prompt-input t2i-prompt-input" rows="7" placeholder="이 컷용 T2I 프롬프트가 여기에 들어옵니다."></textarea>
+          </div>
+          <p class="prompt-collapsed-preview" hidden></p>
+        </section>
+
+        <section class="prompt-panel media-panel" data-panel-view="i2v" hidden>
+          <div class="prompt-panel-header">
+            <div class="prompt-panel-copy">
+              <span class="prompt-platform">Kling / Higgsfield</span>
+              <strong class="prompt-panel-title">I2V Prompt</strong>
+            </div>
+
+            <button class="icon-button prompt-toggle-button" type="button" data-prompt-kind="i2v" aria-expanded="true" aria-label="I2V 프롬프트 접기" title="프롬프트 접기">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 10L12 15L17 10"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="prompt-panel-body">
+            <label class="prompt-field">
+              <span class="prompt-field-label">Start Frame</span>
+              <textarea class="prompt-input i2v-start-input" rows="3" placeholder="시작 프레임 프롬프트"></textarea>
+            </label>
+
+            <label class="prompt-field">
+              <span class="prompt-field-label">Motion</span>
+              <textarea class="prompt-input i2v-motion-input" rows="3" placeholder="카메라 이동 / 피사체 동선 / 속도"></textarea>
+            </label>
+
+            <label class="prompt-field">
+              <span class="prompt-field-label">End Frame</span>
+              <textarea class="prompt-input i2v-end-input" rows="3" placeholder="엔드 프레임 프롬프트"></textarea>
+            </label>
+          </div>
+          <p class="prompt-collapsed-preview" hidden></p>
+        </section>
+      </div>
+
+      <div class="panel-flow-row">
+        <span class="flow-chip">연결 <strong class="panel-next-count">0</strong></span>
+        <span class="flow-chip flow-chip--soft">AI 컷</span>
+        <button class="subtle-button clear-links-button" type="button" hidden>연결 지우기</button>
+      </div>
+
+      <label class="caption-field">
+        <span class="caption-label">상황 설명</span>
+        <textarea
+          class="caption-input"
+          rows="4"
+          placeholder="예: 주인공이 빈 복도 끝에서 멈춘다. 카메라는 천천히 앞으로 이동하고, 분위기는 정적이지만 불안하게."
+        ></textarea>
+      </label>
+    </article>
+  </template>
+
+  <div id="referenceLightbox" class="reference-lightbox" hidden aria-hidden="true">
+    <button id="referenceLightboxBackdrop" class="reference-lightbox-backdrop" type="button" aria-label="닫기"></button>
+    <div class="reference-lightbox-dialog" role="dialog" aria-modal="true" aria-labelledby="referenceLightboxTitle">
+      <div class="reference-lightbox-header">
+        <strong id="referenceLightboxTitle" class="reference-lightbox-title">레퍼런스 이미지</strong>
+        <button id="referenceLightboxClose" class="reference-lightbox-close" type="button" aria-label="확대 이미지 닫기">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6L18 18M18 6L6 18"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="reference-lightbox-body">
+        <img id="referenceLightboxImage" class="reference-lightbox-image" alt="">
+      </div>
+      <p id="referenceLightboxMeta" class="reference-lightbox-meta"></p>
+    </div>
+  </div>
+
+  <div id="confirmDialog" class="confirm-dialog" hidden aria-hidden="true">
+    <button id="confirmDialogBackdrop" class="confirm-dialog-backdrop" type="button" aria-label="닫기"></button>
+    <div class="confirm-dialog-panel" role="alertdialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-describedby="confirmDialogDescription">
+      <div class="confirm-dialog-copy">
+        <p id="confirmDialogEyebrow" class="confirm-dialog-eyebrow">확인</p>
+        <h2 id="confirmDialogTitle" class="confirm-dialog-title">계속할까요?</h2>
+        <p id="confirmDialogDescription" class="confirm-dialog-description">현재 작업을 기준으로 작업을 진행합니다.</p>
+      </div>
+      <div class="confirm-dialog-actions">
+        <button id="confirmDialogCancel" class="secondary-button" type="button">취소</button>
+        <button id="confirmDialogConfirm" class="primary-button" type="button">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="ai-client.js"></script>
+  <script src="script.js"></script>
+  <script src="shotboard-ai.js"></script>
+</body>
+</html>

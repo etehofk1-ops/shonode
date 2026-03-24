@@ -1,0 +1,13 @@
+{
+  "name": "shonode",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shonode storyboard workspace with a local Gemini proxy server",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
