@@ -1,4 +1,4 @@
-window.ShotBoardAI = {
+const shonodeAiClient = {
   model: "gemini-2.5-flash",
   headers: {},
 
@@ -375,3 +375,6 @@ window.ShotBoardAI = {
     };
   }
 };
+
+window.ShonodeAI = shonodeAiClient;
+window.ShotBoardAI = shonodeAiClient;

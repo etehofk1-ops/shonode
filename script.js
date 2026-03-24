@@ -254,6 +254,52 @@ confirmDialogBackdrop?.addEventListener("click", () => closeConfirmDialog(false)
 confirmDialogCancel?.addEventListener("click", () => closeConfirmDialog(false));
 confirmDialogConfirm?.addEventListener("click", () => closeConfirmDialog(true));
 
+function resetWorkspaceState() {
+  pushHistoryState();
+  panels = createDefaultPanels();
+  project = getDefaultProject();
+  selectedPanelIds.clear();
+  zoom = 1;
+  pendingInitialScroll = { left: 0, top: 0 };
+  persistPanels();
+  persistProject();
+  persistViewState();
+  updateZoomUI();
+  renderProjectSidebar();
+  updateHistoryUI();
+  renderPanels({ restoreView: true });
+  setStatus("?뚰겕?ㅽ럹?댁뒪瑜?珥덇린?뷀뻽?듬땲??");
+}
+
+initializeClearBoardButton();
+
+function initializeClearBoardButton() {
+  if (!clearBoardButton || !clearBoardButton.parentElement) {
+    return;
+  }
+
+  const replacement = clearBoardButton.cloneNode(true);
+  clearBoardButton.replaceWith(replacement);
+  replacement.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const shouldReset = await openConfirmDialog({
+      tone: "danger",
+      eyebrow: "Reset Workspace",
+      title: "Reset the current workspace?",
+      description: "All cards, project info, AI drafts, and selection state will return to their defaults.",
+      confirmLabel: "Reset"
+    });
+
+    if (!shouldReset) {
+      return;
+    }
+
+    resetWorkspaceState();
+  }, { capture: true });
+}
+
 board?.addEventListener("click", async (event) => {
   const deleteButton = event.target.closest(".delete-panel-button");
   if (!deleteButton) {

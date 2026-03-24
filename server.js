@@ -2,14 +2,13 @@ const http = require("node:http");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const { handleStoryboardProxy, sendJson } = require("./storyboard-proxy");
 
 const ROOT_DIR = __dirname;
-const GEMINI_API_KEY_ENV = "GEMINI_API_KEY";
 
 loadEnvFile(path.join(ROOT_DIR, ".env"));
 
 const DEFAULT_PORT = Number.parseInt(process.env.PORT || "4173", 10);
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -35,7 +34,9 @@ const requestHandler = async (request, response) => {
     const requestUrl = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
 
     if (requestUrl.pathname === "/api/storyboard") {
-      await handleStoryboardProxy(request, response);
+      await handleStoryboardProxy(request, response, {
+        apiKeyHint: "Set GEMINI_API_KEY in .env or the environment."
+      });
       return;
     }
 
@@ -52,72 +53,6 @@ const requestHandler = async (request, response) => {
 };
 
 listenWithFallback(DEFAULT_PORT, 8);
-
-async function handleStoryboardProxy(request, response) {
-  setCorsHeaders(response);
-
-  if (request.method === "OPTIONS") {
-    response.writeHead(204);
-    response.end();
-    return;
-  }
-
-  if (request.method !== "POST") {
-    sendJson(response, 405, { error: "Method not allowed." });
-    return;
-  }
-
-  const apiKey = process.env[GEMINI_API_KEY_ENV];
-  if (!apiKey) {
-    sendJson(response, 500, {
-      error: "Gemini API key is not configured.",
-      hint: `Set ${GEMINI_API_KEY_ENV} in .env or the environment.`
-    });
-    return;
-  }
-
-  let body;
-  try {
-    body = await readJsonBody(request, 60 * 1024 * 1024);
-  } catch (error) {
-    sendJson(response, 400, { error: error.message || "Invalid JSON body." });
-    return;
-  }
-
-  const model = sanitizeModel(body?.model) || DEFAULT_MODEL;
-  const storyboardRequest = body?.request;
-  if (!storyboardRequest || typeof storyboardRequest !== "object") {
-    sendJson(response, 400, { error: "Missing Gemini request payload." });
-    return;
-  }
-
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  let upstreamResponse;
-  try {
-    upstreamResponse = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify(storyboardRequest)
-    });
-  } catch (error) {
-    sendJson(response, 502, {
-      error: "Failed to reach Gemini upstream.",
-      details: error.message || "Unknown fetch error."
-    });
-    return;
-  }
-
-  const responseText = await upstreamResponse.text();
-  const contentType = upstreamResponse.headers.get("content-type") || "application/json; charset=utf-8";
-
-  response.statusCode = upstreamResponse.status;
-  response.setHeader("Content-Type", contentType);
-  setCorsHeaders(response);
-  response.end(responseText);
-}
 
 async function serveStaticFile(requestPath, response, isHeadRequest = false) {
   const pathname = requestPath === "/" ? "/index.html" : requestPath;
@@ -161,60 +96,6 @@ async function serveStaticFile(requestPath, response, isHeadRequest = false) {
   }
 
   fs.createReadStream(resolvedPath).pipe(response);
-}
-
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-}
-
-function sendJson(response, statusCode, payload) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.end(JSON.stringify(payload));
-}
-
-function readJsonBody(request, maxBytes) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    let size = 0;
-
-    request.on("data", (chunk) => {
-      size += chunk.length;
-      if (size > maxBytes) {
-        reject(new Error("Request body too large."));
-        request.destroy();
-        return;
-      }
-      body += chunk.toString("utf8");
-    });
-
-    request.on("end", () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch (error) {
-        reject(new Error(`JSON parse failed: ${error.message}`));
-      }
-    });
-
-    request.on("error", (error) => {
-      reject(error);
-    });
-  });
-}
-
-function sanitizeModel(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-
-  return /^[a-zA-Z0-9._-]+$/.test(trimmed) ? trimmed : "";
 }
 
 function loadEnvFile(filePath) {

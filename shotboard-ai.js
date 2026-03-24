@@ -1866,19 +1866,21 @@
       let plan = null;
       let source = "local";
 
-      if (window.ShotBoardAI && typeof window.ShotBoardAI.generateStoryboard === "function") {
+      const aiClient = window.ShonodeAI || window.ShotBoardAI;
+      if (aiClient && typeof aiClient.generateStoryboard === "function") {
         try {
-          plan = await window.ShotBoardAI.generateStoryboard(payload);
+          plan = await aiClient.generateStoryboard(payload);
           if (plan) {
             source = "api";
           }
         } catch (error) {
-          console.warn("ShotBoardAI.generateStoryboard failed, using local fallback.", error);
+          console.warn("ShonodeAI.generateStoryboard failed, using local fallback.", error);
         }
       }
 
       if (!plan) {
         plan = buildLocalStoryboardPlan(payload);
+        setStatus("AI 연결에 실패해 로컬 초안으로 대체했습니다.", "warning");
       }
 
       applyStoryboardPlan(normalizePlan(plan, payload), source);
@@ -3350,19 +3352,21 @@
       let plan = null;
       let source = "local";
 
-      if (window.ShotBoardAI && typeof window.ShotBoardAI.generateStoryboard === "function") {
+      const aiClient = window.ShonodeAI || window.ShotBoardAI;
+      if (aiClient && typeof aiClient.generateStoryboard === "function") {
         try {
-          plan = await window.ShotBoardAI.generateStoryboard(payload);
+          plan = await aiClient.generateStoryboard(payload);
           if (plan) {
             source = "api";
           }
         } catch (error) {
-          console.warn("ShotBoardAI.generateStoryboard failed for selected panels, using local fallback.", error);
+          console.warn("ShonodeAI.generateStoryboard failed for selected panels, using local fallback.", error);
         }
       }
 
       if (!plan) {
         plan = buildLocalSelectedStoryboardPlan(payload);
+        setStatus("AI 연결에 실패해 선택 컷을 로컬 초안으로 다시 만들었습니다.", "warning");
       }
 
       pushHistoryState();
