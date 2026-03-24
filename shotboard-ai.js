@@ -2993,6 +2993,8 @@
   }
 
   async function handleExportWorkspace() {
+    await window.ShonodePanelImageStorage?.ready?.();
+    await window.ShonodePanelImageStorage?.flush?.();
     const snapshot = createWorkspaceExportSnapshot();
     const fileName = `${sanitizeWorkspaceFileName(project.title)}-${new Date().toISOString().slice(0, 10)}.shonode`;
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/x-shonode+json" });
@@ -3096,6 +3098,7 @@
     await persistAiReferenceImages();
     persistPanels();
     persistProject();
+    await window.ShonodePanelImageStorage?.flush?.();
     updateZoomUI();
     renderProjectSidebar();
     applySidebarRailState(false);

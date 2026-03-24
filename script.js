@@ -4,6 +4,9 @@ const PROJECT_STORAGE_KEY = "shotboard-project-v1";
 const VIEW_STORAGE_KEY = "shotboard-view-v1";
 const HEADER_STORAGE_KEY = "shotboard-header-collapsed";
 const SIDEBAR_STORAGE_KEY = "shotboard-sidebar-collapsed";
+const PANEL_IMAGE_DB_NAME = "shonode-panel-image-db-v1";
+const PANEL_IMAGE_DB_STORE_NAME = "panel-images";
+const PANEL_IMAGE_DB_RECORD_KEY = "workspace-panels";
 
 const DEFAULT_PANEL_COUNT = 6;
 const HISTORY_LIMIT = 80;
@@ -89,6 +92,9 @@ let activeHistoryGroups = new Set();
 let saveButtonTimeoutId = null;
 let confirmDialogResolver = null;
 let confirmDialogLastActiveElement = null;
+let panelImageStoragePromise = null;
+let panelImagePersistPromise = Promise.resolve();
+let panelImagePersistFingerprint = "";
 
 const savedView = loadViewState();
 let zoom = clamp(savedView.zoom ?? 1, MIN_ZOOM, MAX_ZOOM);
@@ -104,6 +110,12 @@ updateZoomUI();
 renderProjectSidebar();
 updateHistoryUI();
 renderPanels({ restoreView: true });
+initializePanelImageStorage();
+
+window.ShonodePanelImageStorage = {
+  ready: initializePanelImageStorage,
+  flush: flushPanelImagePersistence
+};
 
 addPanelButton.addEventListener("click", () => {
   pushHistoryState();
@@ -424,6 +436,182 @@ function createId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function buildPanelImageRecords(sourcePanels = panels) {
+  return sourcePanels
+    .filter((panel) => typeof panel?.image === "string" && panel.image)
+    .map((panel) => ({
+      id: panel.id,
+      image: panel.image,
+      fileName: typeof panel.fileName === "string" ? panel.fileName : ""
+    }));
+}
+
+function getPanelImagePersistFingerprint(records) {
+  return records
+    .map((record) => [
+      record.id,
+      record.fileName || "",
+      record.image.length,
+      record.image.slice(0, 24),
+      record.image.slice(-24)
+    ].join(":"))
+    .join("|");
+}
+
+function serializePanelsForStorage(sourcePanels = panels) {
+  return sourcePanels.map((panel, index) => {
+    const normalized = normalizePanel(panel, index);
+    return {
+      ...normalized,
+      image: ""
+    };
+  });
+}
+
+function applyPanelImages(sourcePanels, imageRecords) {
+  const imageMap = new Map(
+    imageRecords
+      .filter((record) => typeof record?.id === "string" && typeof record?.image === "string")
+      .map((record) => [record.id, record])
+  );
+
+  return sourcePanels.map((panel, index) => {
+    const storedImage = imageMap.get(panel.id);
+    return normalizePanel({
+      ...panel,
+      image: storedImage?.image || panel.image || "",
+      fileName: panel.fileName || storedImage?.fileName || ""
+    }, index);
+  });
+}
+
+function initializePanelImageStorage() {
+  if (panelImageStoragePromise) {
+    return panelImageStoragePromise;
+  }
+
+  panelImageStoragePromise = (async () => {
+    const storedRecords = await loadPanelImagesFromIndexedDb();
+    const legacyRecords = buildPanelImageRecords(panels);
+    const mergedRecords = legacyRecords.length > 0 ? mergePanelImageRecords(storedRecords, legacyRecords) : storedRecords;
+    const hydratedPanels = applyPanelImages(panels, mergedRecords);
+    const shouldPersistLegacyMigration = legacyRecords.length > 0;
+    const didHydrateFromDb = mergedRecords.length > 0 && hydratedPanels.some((panel, index) => panel.image !== (panels[index]?.image || ""));
+
+    panels = hydratedPanels;
+    panelImagePersistFingerprint = getPanelImagePersistFingerprint(buildPanelImageRecords(panels));
+
+    if (shouldPersistLegacyMigration) {
+      persistPanels();
+    }
+
+    if (didHydrateFromDb) {
+      renderPanels({ restoreView: true });
+    }
+  })().catch((error) => {
+    console.warn("Failed to initialize panel image storage.", error);
+  });
+
+  return panelImageStoragePromise;
+}
+
+function mergePanelImageRecords(existingRecords, incomingRecords) {
+  const merged = new Map();
+
+  existingRecords.forEach((record) => {
+    if (record?.id) {
+      merged.set(record.id, record);
+    }
+  });
+
+  incomingRecords.forEach((record) => {
+    if (record?.id) {
+      merged.set(record.id, record);
+    }
+  });
+
+  return Array.from(merged.values());
+}
+
+function openPanelImageDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB is not available."));
+      return;
+    }
+
+    const request = window.indexedDB.open(PANEL_IMAGE_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(PANEL_IMAGE_DB_STORE_NAME)) {
+        database.createObjectStore(PANEL_IMAGE_DB_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Failed to open panel image IndexedDB."));
+  });
+}
+
+async function loadPanelImagesFromIndexedDb() {
+  try {
+    const database = await openPanelImageDb();
+    const result = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(PANEL_IMAGE_DB_STORE_NAME, "readonly");
+      const store = transaction.objectStore(PANEL_IMAGE_DB_STORE_NAME);
+      const request = store.get(PANEL_IMAGE_DB_RECORD_KEY);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Failed to read panel images."));
+    });
+    database.close();
+
+    if (!Array.isArray(result)) {
+      return [];
+    }
+
+    return result.filter((record) => typeof record?.id === "string" && typeof record?.image === "string");
+  } catch (error) {
+    console.warn("Failed to load panel images from IndexedDB.", error);
+    return [];
+  }
+}
+
+async function savePanelImagesToIndexedDb(records) {
+  const database = await openPanelImageDb();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction(PANEL_IMAGE_DB_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(PANEL_IMAGE_DB_STORE_NAME);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("Failed to save panel images."));
+    store.put(records, PANEL_IMAGE_DB_RECORD_KEY);
+  });
+  database.close();
+}
+
+function queuePanelImagePersistence() {
+  const records = buildPanelImageRecords(panels);
+  const nextFingerprint = getPanelImagePersistFingerprint(records);
+  if (nextFingerprint === panelImagePersistFingerprint) {
+    return panelImagePersistPromise;
+  }
+
+  const previousFingerprint = panelImagePersistFingerprint;
+  panelImagePersistFingerprint = nextFingerprint;
+  panelImagePersistPromise = panelImagePersistPromise
+    .catch(() => undefined)
+    .then(() => savePanelImagesToIndexedDb(records))
+    .catch((error) => {
+      panelImagePersistFingerprint = previousFingerprint;
+      console.warn("Failed to persist panel images.", error);
+      setStatus("패널 이미지를 저장하는 중 문제가 생겼습니다.", "warning");
+    });
+
+  return panelImagePersistPromise;
+}
+
+function flushPanelImagePersistence() {
+  return queuePanelImagePersistence();
+}
+
 function loadPanels() {
   const sources = [window.localStorage.getItem(STORAGE_KEY)];
 
@@ -573,7 +761,8 @@ function updateDocumentTitle() {
 
 function persistPanels() {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(panels));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializePanelsForStorage(panels)));
+    queuePanelImagePersistence();
     return true;
   } catch {
     setStatus(
