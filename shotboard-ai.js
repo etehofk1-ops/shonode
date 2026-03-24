@@ -129,8 +129,11 @@
       sceneTitle: "",
       durationLabel: "",
       viewMode: "image",
+      imagePromptMode: "i2i",
       t2iCollapsed: false,
       i2vCollapsed: false,
+      referenceImageIds: [],
+      referenceImageNames: [],
       referenceImageId: "",
       referenceImageName: "",
       t2iPrompt: "",
@@ -144,6 +147,16 @@
 
   normalizePanel = function overrideNormalizePanel(panel, index) {
     const base = originalNormalizePanel(panel, index);
+    const referenceImageIds = normalizeReferenceImageIds(panel?.referenceImageIds, panel?.referenceImageId);
+    const referenceImageNames = normalizeReferenceImageNames(panel?.referenceImageNames, panel?.referenceImageName);
+    const imagePromptMode = panel?.imagePromptMode === "i2i" || panel?.imagePromptMode === "t2i"
+      ? panel.imagePromptMode
+      : referenceImageIds.length > 0
+        ? "i2i"
+        : typeof panel?.t2iPrompt === "string" && panel.t2iPrompt.trim()
+          ? "t2i"
+          : "i2i";
+
     return {
       ...base,
       sceneTitle: typeof panel?.sceneTitle === "string" ? panel.sceneTitle : "",
@@ -155,8 +168,11 @@
           : "image",
       t2iCollapsed: Boolean(panel?.t2iCollapsed),
       i2vCollapsed: Boolean(panel?.i2vCollapsed),
-      referenceImageId: typeof panel?.referenceImageId === "string" ? panel.referenceImageId : "",
-      referenceImageName: typeof panel?.referenceImageName === "string" ? panel.referenceImageName : "",
+      imagePromptMode,
+      referenceImageIds,
+      referenceImageNames,
+      referenceImageId: referenceImageIds[0] || "",
+      referenceImageName: referenceImageNames[0] || "",
       t2iPrompt: typeof panel?.t2iPrompt === "string" ? panel.t2iPrompt : "",
       i2vStartPrompt: typeof panel?.i2vStartPrompt === "string" ? panel.i2vStartPrompt : "",
       i2vMotionPrompt: typeof panel?.i2vMotionPrompt === "string" ? panel.i2vMotionPrompt : "",
@@ -285,6 +301,11 @@
     const i2vStartInput = fragment.querySelector(".i2v-start-input");
     const i2vMotionInput = fragment.querySelector(".i2v-motion-input");
     const i2vEndInput = fragment.querySelector(".i2v-end-input");
+    const t2iTitleEl = fragment.querySelector("[data-prompt-title]") || fragment.querySelector(".prompt-panel-title");
+    const t2iTitleTextEl = fragment.querySelector('[data-prompt-title-kind="t2i"]');
+    const i2iTitleTextEl = fragment.querySelector('[data-prompt-title-kind="i2i"]');
+    const t2iViewLabelEl = fragment.querySelector('[data-view-label="t2i"]');
+    const referenceBookmarkListEl = fragment.querySelector(".reference-bookmark-list");
     const referenceBookmarkEl = fragment.querySelector(".reference-bookmark");
     const referenceBookmarkThumbEl = fragment.querySelector(".reference-bookmark-thumb");
     const referenceBookmarkNameEl = fragment.querySelector(".reference-bookmark-name");
@@ -303,13 +324,70 @@
     i2vStartInput.value = panel.i2vStartPrompt;
     i2vMotionInput.value = panel.i2vMotionPrompt;
     i2vEndInput.value = panel.i2vEndPrompt;
+    if (t2iTitleTextEl && i2iTitleTextEl) {
+      const isI2I = getPromptMode(panel) === "i2i";
+      t2iTitleTextEl.hidden = isI2I;
+      i2iTitleTextEl.hidden = !isI2I;
+    } else if (t2iTitleEl) {
+      t2iTitleEl.textContent = getPromptDisplayTitle(panel);
+    }
+    if (t2iViewLabelEl) {
+      t2iViewLabelEl.textContent = getPromptDisplayLabel(panel);
+    }
     syncMediaView(panel, viewButtons, mediaPanels);
     syncPromptPanels(panel, promptPanels);
     card.classList.toggle("is-link-source", linkState?.sourceId === panel.id);
     card.classList.toggle("is-link-target", linkState?.targetId === panel.id);
 
-    const referenceImage = getReferenceImageById(panel.referenceImageId);
-    if (referenceBookmarkEl && referenceBookmarkNameEl) {
+    const referenceImages = getPanelReferenceImages(panel);
+    if (referenceBookmarkListEl) {
+      referenceBookmarkListEl.innerHTML = "";
+      referenceBookmarkListEl.hidden = referenceImages.length === 0;
+
+      referenceImages.forEach((referenceItem, referenceIndex) => {
+        const bookmarkEl = document.createElement("button");
+        bookmarkEl.className = "reference-bookmark";
+        bookmarkEl.type = "button";
+        bookmarkEl.innerHTML = `
+          <div class="reference-bookmark-thumb-wrap">
+            <img class="reference-bookmark-thumb" alt="">
+          </div>
+          <div class="reference-bookmark-copy">
+            <span class="reference-bookmark-label">Reference ${referenceIndex + 1}</span>
+            <strong class="reference-bookmark-name"></strong>
+          </div>
+        `;
+
+        const bookmarkThumbEl = bookmarkEl.querySelector(".reference-bookmark-thumb");
+        const bookmarkNameEl = bookmarkEl.querySelector(".reference-bookmark-name");
+        bookmarkNameEl.textContent = referenceItem.name || `reference-${referenceIndex + 1}`;
+
+        if (referenceItem.image?.dataUrl && bookmarkThumbEl) {
+          bookmarkEl.classList.add("is-clickable");
+          bookmarkThumbEl.hidden = false;
+          bookmarkThumbEl.src = referenceItem.image.dataUrl;
+          bookmarkThumbEl.alt = `${titleEl.textContent} reference ${referenceIndex + 1}`;
+          bookmarkEl.setAttribute("aria-label", `${titleEl.textContent} 레퍼런스 ${referenceIndex + 1} 확대 보기`);
+          bookmarkEl.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openReferenceLightbox(referenceItem.image, referenceItem.image.name || titleEl.textContent);
+          });
+        } else {
+          bookmarkEl.classList.add("is-placeholder");
+          bookmarkEl.disabled = true;
+          if (bookmarkThumbEl) {
+            bookmarkThumbEl.hidden = true;
+            bookmarkThumbEl.removeAttribute("src");
+            bookmarkThumbEl.alt = "";
+          }
+        }
+
+        referenceBookmarkListEl.appendChild(bookmarkEl);
+      });
+    } else if (referenceBookmarkEl && referenceBookmarkNameEl) {
+      const primaryReference = referenceImages[0];
+      const referenceImage = primaryReference?.image || null;
       referenceBookmarkEl.classList.remove("is-clickable");
       referenceBookmarkEl.removeAttribute("role");
       referenceBookmarkEl.removeAttribute("tabindex");
@@ -319,12 +397,12 @@
         referenceBookmarkEl.classList.add("is-clickable");
         referenceBookmarkEl.setAttribute("role", "button");
         referenceBookmarkEl.setAttribute("tabindex", "0");
-        referenceBookmarkEl.setAttribute("aria-label", `${titleEl.textContent} 레퍼런스 이미지 확대 보기`);
+        referenceBookmarkEl.setAttribute("aria-label", `${titleEl.textContent} 첨부 이미지 확대 보기`);
         referenceBookmarkNameEl.textContent = referenceImage.name || panel.referenceImageName || "연결된 레퍼런스";
         if (referenceBookmarkThumbEl) {
           referenceBookmarkThumbEl.hidden = false;
           referenceBookmarkThumbEl.src = referenceImage.dataUrl;
-          referenceBookmarkThumbEl.alt = `${titleEl.textContent} 레퍼런스 이미지`;
+          referenceBookmarkThumbEl.alt = `${titleEl.textContent} 첨부 이미지`;
         }
         const openBookmarkPreview = (event) => {
           event.preventDefault();
@@ -338,9 +416,9 @@
           }
           openBookmarkPreview(event);
         });
-      } else if (panel.referenceImageName) {
+      } else if (primaryReference?.name) {
         referenceBookmarkEl.hidden = false;
-        referenceBookmarkNameEl.textContent = panel.referenceImageName;
+        referenceBookmarkNameEl.textContent = primaryReference.name;
         if (referenceBookmarkThumbEl) {
           referenceBookmarkThumbEl.hidden = true;
           referenceBookmarkThumbEl.removeAttribute("src");
@@ -392,12 +470,13 @@
       button.addEventListener("click", () => {
         const kind = button.dataset.promptKind;
         const fieldName = getPromptCollapsedField(kind);
+        const promptLabel = kind === "t2i" ? getPromptDisplayLabel(panel) : kind.toUpperCase();
         if (!fieldName) {
           return;
         }
 
         updatePanel(panel.id, { [fieldName]: !panel[fieldName] }, { announce: false });
-        setStatus(`${titleEl.textContent} ${kind.toUpperCase()} 패널을 ${panel[fieldName] ? "펼쳤습니다" : "접었습니다"}.`);
+        setStatus(`${titleEl.textContent} ${promptLabel} 패널을 ${panel[fieldName] ? "펼쳤습니다" : "접었습니다"}.`);
       });
     });
 
@@ -652,6 +731,7 @@
 
       renderAiReferenceImages();
       renderAiOutputs();
+      renderPanels({ restoreView: true });
     })().catch((error) => {
       console.warn("Failed to initialize AI reference storage.", error);
     });
@@ -724,10 +804,199 @@
 
   function getReferenceImageById(referenceImageId) {
     if (!referenceImageId) {
-      return null;
+      return [];
     }
 
     return aiReferenceImages.find((image) => image.id === referenceImageId) || null;
+  }
+
+  function normalizeReferenceImageIds(referenceImageIds, fallbackId = "") {
+    const ids = Array.isArray(referenceImageIds)
+      ? referenceImageIds.filter((value) => typeof value === "string" && value)
+      : [];
+
+    if (ids.length > 0) {
+      return Array.from(new Set(ids));
+    }
+
+    return typeof fallbackId === "string" && fallbackId ? [fallbackId] : [];
+  }
+
+  function normalizeReferenceImageNames(referenceImageNames, fallbackName = "") {
+    const names = Array.isArray(referenceImageNames)
+      ? referenceImageNames
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+      : [];
+
+    if (names.length > 0) {
+      return names;
+    }
+
+    return typeof fallbackName === "string" && fallbackName.trim() ? [fallbackName.trim()] : [];
+  }
+
+  function getPanelReferenceImageIds(panel) {
+    return normalizeReferenceImageIds(panel?.referenceImageIds, panel?.referenceImageId);
+  }
+
+  function getPanelReferenceImageNames(panel) {
+    return normalizeReferenceImageNames(panel?.referenceImageNames, panel?.referenceImageName);
+  }
+
+  function getPanelReferenceImages(panel) {
+    const ids = getPanelReferenceImageIds(panel);
+    const names = getPanelReferenceImageNames(panel);
+    const items = ids.map((id, index) => {
+      const image = getReferenceImageById(id);
+      return {
+        id,
+        name: image?.name || names[index] || `reference-${index + 1}`,
+        image
+      };
+    });
+
+    if (items.length > 0) {
+      return items;
+    }
+
+    return names.map((name, index) => ({
+      id: "",
+      name: name || `reference-${index + 1}`,
+      image: null
+    }));
+  }
+
+  function getPromptMode(panel) {
+    if (panel?.imagePromptMode === "i2i" || panel?.imagePromptMode === "t2i") {
+      return panel.imagePromptMode;
+    }
+
+    if (getPanelReferenceImageIds(panel).length > 0) {
+      return "i2i";
+    }
+
+    return typeof panel?.t2iPrompt === "string" && panel.t2iPrompt.trim() ? "t2i" : "i2i";
+  }
+
+  function getPromptDisplayLabel(panel) {
+    return getPromptMode(panel).toUpperCase();
+  }
+
+  function getPromptDisplayTitle(panel) {
+    return `${getPromptDisplayLabel(panel)} Prompt`;
+  }
+
+  function getReferenceSummaryText(panel) {
+    const names = getPanelReferenceImages(panel)
+      .map((item) => item.name)
+      .filter(Boolean);
+
+    if (names.length === 0) {
+      return "레퍼런스 없음";
+    }
+
+    if (names.length === 1) {
+      return `레퍼런스 ${names[0]}`;
+    }
+
+    return `레퍼런스 ${names.length}장`;
+  }
+
+  function normalizeReferenceIndexes(referenceImageIndexes, fallbackIndex = -1) {
+    const indexes = Array.isArray(referenceImageIndexes)
+      ? referenceImageIndexes.filter((value) => Number.isInteger(value) && value >= 0)
+      : [];
+
+    if (indexes.length > 0) {
+      return Array.from(new Set(indexes));
+    }
+
+    return Number.isInteger(fallbackIndex) && fallbackIndex >= 0 ? [fallbackIndex] : [];
+  }
+
+  function normalizeImagePromptMode(mode, referenceImageIndexes, i2iPrompt = "", t2iPrompt = "") {
+    const normalizedMode = typeof mode === "string" ? mode.trim().toLowerCase() : "";
+
+    if (normalizedMode === "i2i" || normalizedMode === "t2i") {
+      return normalizedMode;
+    }
+
+    if (referenceImageIndexes.length > 0 || (typeof i2iPrompt === "string" && i2iPrompt.trim())) {
+      return "i2i";
+    }
+
+    return "t2i";
+  }
+
+  function ensureReferenceGuidedPrompt(prompt) {
+    const normalizedPrompt = typeof prompt === "string" ? prompt.trim() : "";
+    if (!normalizedPrompt) {
+      return "";
+    }
+
+    const lowerPrompt = normalizedPrompt.toLowerCase();
+    if (
+      lowerPrompt.includes("reference image") ||
+      lowerPrompt.includes("reference images") ||
+      lowerPrompt.includes("source image") ||
+      lowerPrompt.includes("source images") ||
+      lowerPrompt.includes("transform the assigned") ||
+      lowerPrompt.includes("reinterpret") ||
+      lowerPrompt.includes("reimagine")
+    ) {
+      return normalizedPrompt;
+    }
+
+    return `Use the assigned reference images as source anchors. Recompose and redesign the scene into a fresh commercial still instead of recreating the uploaded frame literally. ${normalizedPrompt}`;
+  }
+
+  function resolveCutImagePrompt(cut) {
+    const referenceImageIndexes = normalizeReferenceIndexes(cut?.referenceImageIndexes, cut?.referenceImageIndex);
+    const i2iPrompt = typeof cut?.i2iPrompt === "string" ? cut.i2iPrompt.trim() : "";
+    const t2iPrompt = typeof cut?.t2iPrompt === "string" ? cut.t2iPrompt.trim() : "";
+    const imagePromptMode = normalizeImagePromptMode(cut?.imagePromptMode, referenceImageIndexes, i2iPrompt, t2iPrompt);
+    const resolvedI2IPrompt = ensureReferenceGuidedPrompt(i2iPrompt || t2iPrompt);
+    const resolvedT2IPrompt = t2iPrompt || i2iPrompt;
+
+    return {
+      imagePromptMode,
+      referenceImageIndexes,
+      i2iPrompt: resolvedI2IPrompt,
+      t2iPrompt: resolvedT2IPrompt,
+      imagePrompt: imagePromptMode === "i2i"
+        ? resolvedI2IPrompt
+        : resolvedT2IPrompt
+    };
+  }
+
+  function resolveCutReferenceIndexes(cut, referenceImageCount = 0, fallbackIndex = 0) {
+    const normalizedIndexes = normalizeReferenceIndexes(cut?.referenceImageIndexes, cut?.referenceImageIndex);
+    if (normalizedIndexes.length > 0) {
+      return normalizedIndexes;
+    }
+
+    if (referenceImageCount > 0) {
+      return buildReferenceIndexList(referenceImageCount, fallbackIndex, referenceImageCount > 2 ? 3 : 2);
+    }
+
+    return [];
+  }
+
+  function buildReferenceIndexList(referenceCount, cutIndex, preferredCount = 2) {
+    if (referenceCount <= 0) {
+      return [];
+    }
+
+    const count = Math.max(1, Math.min(referenceCount, preferredCount));
+    const indexes = [];
+
+    for (let offset = 0; offset < count; offset += 1) {
+      indexes.push((cutIndex + offset) % referenceCount);
+    }
+
+    return Array.from(new Set(indexes));
   }
 
   function getReferenceUsageMap() {
@@ -751,7 +1020,7 @@
       window.sessionStorage.setItem(AI_REFERENCE_IMAGES_STORAGE_KEY, JSON.stringify(aiReferenceImages));
       return true;
     } catch {
-      setStatus("레퍼런스 이미지가 많아서 모두 저장하지 못했습니다. 장수를 줄여주세요.", "warning");
+      setStatus("첨부 이미지가 많아서 모두 저장하지 못했습니다. 장수를 줄여주세요.", "warning");
       return false;
     }
   }
@@ -764,7 +1033,7 @@
 
     const remainingSlots = AI_REFERENCE_IMAGE_LIMIT - aiReferenceImages.length;
     if (remainingSlots <= 0) {
-      setStatus(`레퍼런스 이미지는 최대 ${AI_REFERENCE_IMAGE_LIMIT}장까지 추가할 수 있습니다.`, "warning");
+      setStatus(`첨부 이미지는 최대 ${AI_REFERENCE_IMAGE_LIMIT}장까지 추가할 수 있습니다.`, "warning");
       return;
     }
 
@@ -790,7 +1059,7 @@
     aiReferenceImages = [...aiReferenceImages, ...processedImages];
     await persistAiReferenceImages();
     renderAiReferenceImages();
-    setStatus(`${processedImages.length}개의 레퍼런스 이미지를 추가했습니다.`);
+    setStatus(`${processedImages.length}개의 첨부 이미지를 추가했습니다.`);
   }
 
   async function removeAiReferenceImage(referenceId) {
@@ -802,7 +1071,7 @@
     aiReferenceImages = nextImages;
     await persistAiReferenceImages();
     renderAiReferenceImages();
-    setStatus("레퍼런스 이미지를 제거했습니다.");
+    setStatus("첨부 이미지를 제거했습니다.");
   }
 
   /* function renderAiReferenceImages() {
@@ -826,8 +1095,8 @@
       const item = document.createElement("article");
       item.className = "ai-reference-item";
       item.innerHTML = `
-        <img class="ai-reference-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
-        <button class="ai-reference-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+        <img class="ai-reference-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "첨부 이미지")}">
+        <button class="ai-reference-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="첨부 이미지 삭제" title="첨부 이미지 삭제">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6L18 18M18 6L6 18"></path>
           </svg>
@@ -1360,6 +1629,7 @@
     sections.forEach((section) => {
       const kind = section.dataset.panelView;
       const fieldName = getPromptCollapsedField(kind);
+      const promptLabel = kind === "t2i" ? getPromptDisplayLabel(panel) : kind.toUpperCase();
       if (!fieldName) {
         return;
       }
@@ -1381,7 +1651,7 @@
 
       if (button) {
         button.setAttribute("aria-expanded", String(!collapsed));
-        button.setAttribute("aria-label", `${kind.toUpperCase()} 프롬프트 ${collapsed ? "펼치기" : "접기"}`);
+        button.setAttribute("aria-label", `${promptLabel} 프롬프트 ${collapsed ? "펼치기" : "접기"}`);
         button.title = collapsed ? "프롬프트 펼치기" : "프롬프트 접기";
       }
     });
@@ -1435,7 +1705,7 @@
       const referenceMeta = aiReferenceImages.length > 0 ? ` · 레퍼런스 ${aiReferenceImages.length}장` : "";
       aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 브리프 초안 준비 완료${referenceMeta}`;
     } else {
-      aiPlanMetaEl.textContent = "브리프와 레퍼런스 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
+      aiPlanMetaEl.textContent = "브리프와 첨부 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
     }
 
     aiSummaryOutputEl.textContent = project.aiSummary?.trim()
@@ -1621,15 +1891,15 @@
     if (aiReferenceImages.length > 0) {
       return [
         {
-          title: "레퍼런스 이미지 분석 중",
+          title: "첨부 이미지 분석 중",
           hint: "업로드한 이미지를 읽고 유지할 요소와 바꿀 요소를 추출하고 있습니다."
         },
         {
-          title: "I2T 방향 정리 중",
+          title: "I2I 방향 정리 중",
           hint: "기존 이미지에서 리디자인할 핵심 포인트를 I2T 프롬프트로 정리하고 있습니다."
         },
         {
-          title: "T2I·I2V 연결 중",
+          title: "I2I·T2I·I2V 연결 중",
           hint: "리디자인 결과가 이미지 생성과 영상 생성으로 자연스럽게 이어지도록 맞추고 있습니다."
         },
         {
@@ -1713,24 +1983,31 @@
       previewVideoUrl: typeof rawPlan?.previewVideoUrl === "string" ? rawPlan.previewVideoUrl : "",
       previewPosterUrl: typeof rawPlan?.previewPosterUrl === "string" ? rawPlan.previewPosterUrl : "",
       projectDraft,
-      cuts: cuts.map((cut, index) => ({
-        sceneTitle: typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
-        durationLabel: typeof cut.durationLabel === "string" ? cut.durationLabel : "",
-        caption: withDurationInCaption(
-          typeof cut.caption === "string" ? cut.caption : "",
-          typeof cut.durationLabel === "string" ? cut.durationLabel : ""
-        ),
-        i2tPrompt: typeof cut.i2tPrompt === "string"
-          ? cut.i2tPrompt
-          : buildI2TPrompt(
-            typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
-            typeof cut.caption === "string" ? cut.caption : ""
+      cuts: cuts.map((cut, index) => {
+        const promptState = resolveCutImagePrompt(cut);
+        return {
+          sceneTitle: typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
+          durationLabel: typeof cut.durationLabel === "string" ? cut.durationLabel : "",
+          caption: withDurationInCaption(
+            typeof cut.caption === "string" ? cut.caption : "",
+            typeof cut.durationLabel === "string" ? cut.durationLabel : ""
           ),
-        t2iPrompt: typeof cut.t2iPrompt === "string" ? cut.t2iPrompt : "",
-        i2vStartPrompt: typeof cut.i2vStartPrompt === "string" ? cut.i2vStartPrompt : "",
-        i2vMotionPrompt: typeof cut.i2vMotionPrompt === "string" ? cut.i2vMotionPrompt : "",
-        i2vEndPrompt: typeof cut.i2vEndPrompt === "string" ? cut.i2vEndPrompt : ""
-      }))
+          i2tPrompt: typeof cut.i2tPrompt === "string"
+            ? cut.i2tPrompt
+            : buildI2TPrompt(
+              typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
+              typeof cut.caption === "string" ? cut.caption : ""
+            ),
+          referenceImageIndexes: promptState.referenceImageIndexes,
+          referenceImageIndex: promptState.referenceImageIndexes[0] ?? -1,
+          imagePromptMode: promptState.imagePromptMode,
+          i2iPrompt: promptState.i2iPrompt,
+          t2iPrompt: promptState.t2iPrompt,
+          i2vStartPrompt: typeof cut.i2vStartPrompt === "string" ? cut.i2vStartPrompt : "",
+          i2vMotionPrompt: typeof cut.i2vMotionPrompt === "string" ? cut.i2vMotionPrompt : "",
+          i2vEndPrompt: typeof cut.i2vEndPrompt === "string" ? cut.i2vEndPrompt : ""
+        };
+      })
     };
   }
 
@@ -1930,8 +2207,8 @@
       <strong>${escapeHtml(panel.sceneTitle || "선택된 컷")}</strong>
       <p>${escapeHtml(panel.caption || "설명 없음")}</p>
       <p>${escapeHtml([
-        panel.referenceImageId ? `레퍼런스 ${panel.referenceImageName || "연결됨"}` : "레퍼런스 없음",
-        panel.t2iPrompt ? `T2I ${panel.t2iPrompt.length}자` : "T2I 비어 있음",
+        getReferenceSummaryText(panel),
+        panel.t2iPrompt ? `${getPromptDisplayLabel(panel)} ${panel.t2iPrompt.length}자` : `${getPromptDisplayLabel(panel)} 비어 있음`,
         panel.i2vStartPrompt || panel.i2vMotionPrompt || panel.i2vEndPrompt ? "I2V 준비됨" : "I2V 비어 있음"
       ].join(" · "))}</p>
     `;
@@ -1942,15 +2219,15 @@
     if (aiReferenceImages.length > 0) {
       return [
         {
-          title: "레퍼런스 이미지 분석 중",
+          title: "첨부 이미지 분석 중",
           hint: "업로드한 이미지를 읽고 유지할 핵심 피사체와 무드를 정리하고 있습니다."
         },
         {
-          title: "컷별 레퍼런스 매칭 중",
-          hint: "어떤 컷에 어떤 참고 이미지를 붙일지 고르고 있습니다."
+          title: "컷별 첨부 이미지 배치 중",
+          hint: "어떤 컷에 어떤 첨부 이미지를 묶을지 고르고 있습니다."
         },
         {
-          title: "T2I / I2V 프롬프트 조합 중",
+          title: "I2I / T2I / I2V 프롬프트 조합 중",
           hint: "레퍼런스를 바탕으로 이미지 생성과 영상 생성 문장을 정리하고 있습니다."
         },
         {
@@ -1970,7 +2247,7 @@
         hint: "도입부터 엔드 프레임까지 이어지는 장면 순서를 정리하고 있습니다."
       },
       {
-        title: "T2I / I2V 프롬프트 조합 중",
+        title: "I2I / T2I / I2V 프롬프트 조합 중",
         hint: "컷별 프롬프트를 모델 흐름에 맞게 정리하고 있습니다."
       },
       {
@@ -1992,46 +2269,69 @@
       previewVideoUrl: typeof rawPlan?.previewVideoUrl === "string" ? rawPlan.previewVideoUrl : "",
       previewPosterUrl: typeof rawPlan?.previewPosterUrl === "string" ? rawPlan.previewPosterUrl : "",
       projectDraft,
-      cuts: cuts.map((cut, index) => ({
-        sceneTitle: typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
-        durationLabel: typeof cut.durationLabel === "string" ? cut.durationLabel : "",
-        caption: withDurationInCaption(
-          typeof cut.caption === "string" ? cut.caption : "",
-          typeof cut.durationLabel === "string" ? cut.durationLabel : ""
-        ),
-        referenceImageIndex: Number.isInteger(cut.referenceImageIndex) ? cut.referenceImageIndex : -1,
-        t2iPrompt: typeof cut.t2iPrompt === "string" ? cut.t2iPrompt : "",
-        i2vStartPrompt: typeof cut.i2vStartPrompt === "string" ? cut.i2vStartPrompt : "",
-        i2vMotionPrompt: typeof cut.i2vMotionPrompt === "string" ? cut.i2vMotionPrompt : "",
-        i2vEndPrompt: typeof cut.i2vEndPrompt === "string" ? cut.i2vEndPrompt : ""
-      }))
+      cuts: cuts.map((cut, index) => {
+        const referenceImageIndexes = resolveCutReferenceIndexes(cut, Number(payload?.referenceImageCount) || 0, index);
+        const promptState = resolveCutImagePrompt({
+          ...cut,
+          referenceImageIndexes,
+          referenceImageIndex: referenceImageIndexes[0] ?? -1
+        });
+
+        return {
+          sceneTitle: typeof cut.sceneTitle === "string" ? cut.sceneTitle : `${index + 1}. 컷`,
+          durationLabel: typeof cut.durationLabel === "string" ? cut.durationLabel : "",
+          caption: withDurationInCaption(
+            typeof cut.caption === "string" ? cut.caption : "",
+            typeof cut.durationLabel === "string" ? cut.durationLabel : ""
+          ),
+          referenceImageIndexes,
+          referenceImageIndex: referenceImageIndexes[0] ?? -1,
+          imagePromptMode: promptState.imagePromptMode,
+          i2iPrompt: promptState.i2iPrompt,
+          t2iPrompt: promptState.t2iPrompt,
+          i2vStartPrompt: typeof cut.i2vStartPrompt === "string" ? cut.i2vStartPrompt : "",
+          i2vMotionPrompt: typeof cut.i2vMotionPrompt === "string" ? cut.i2vMotionPrompt : "",
+          i2vEndPrompt: typeof cut.i2vEndPrompt === "string" ? cut.i2vEndPrompt : ""
+        };
+      })
     };
   }
 
   function resolveReferenceAssignment(rawIndex, fallbackIndex = 0) {
     if (aiReferenceImages.length === 0) {
-      return null;
+      return [];
     }
 
-    const candidateIndex = Number.isInteger(rawIndex) && rawIndex >= 0
-      ? rawIndex
-      : fallbackIndex % aiReferenceImages.length;
-    const safeIndex = Math.min(aiReferenceImages.length - 1, Math.max(0, candidateIndex));
-    const image = aiReferenceImages[safeIndex];
+    const normalizedIndexes = normalizeReferenceIndexes(rawIndex)
+      .filter((value) => value < aiReferenceImages.length);
+    const referenceIndexes = normalizedIndexes.length > 0
+      ? normalizedIndexes
+      : buildReferenceIndexList(aiReferenceImages.length, fallbackIndex, aiReferenceImages.length > 1 ? 2 : 1);
 
-    return image
-      ? {
-          id: image.id,
-          name: image.name || `레퍼런스 ${safeIndex + 1}`
-        }
-      : null;
+    return referenceIndexes
+      .map((referenceIndex) => {
+        const image = aiReferenceImages[referenceIndex];
+        return image
+          ? {
+              id: image.id,
+              name: image.name || `reference-${referenceIndex + 1}`,
+              index: referenceIndex
+            }
+          : null;
+      })
+      .filter(Boolean);
+
   }
 
   function applyStoryboardPlan(plan, source) {
     const nextPanels = plan.cuts.map((cut, index) => {
       const position = getGeneratedPosition(index);
       const existing = panels[index];
-      const referenceAssignment = resolveReferenceAssignment(cut.referenceImageIndex, index);
+      const promptState = resolveCutImagePrompt(cut);
+      const referenceAssignment = resolveReferenceAssignment(
+        cut.referenceImageIndexes ?? cut.referenceImageIndex,
+        index
+      );
 
       return createEmptyPanel({
         id: existing?.id || createId(),
@@ -2041,14 +2341,17 @@
         image: existing?.image || "",
         fileName: existing?.fileName || "",
         viewMode: "t2i",
+        imagePromptMode: promptState.imagePromptMode,
         t2iCollapsed: false,
         i2vCollapsed: true,
         sceneTitle: cut.sceneTitle,
         durationLabel: cut.durationLabel,
         caption: cut.caption,
-        referenceImageId: referenceAssignment?.id || "",
-        referenceImageName: referenceAssignment?.name || "",
-        t2iPrompt: cut.t2iPrompt,
+        referenceImageIds: referenceAssignment.map((item) => item.id),
+        referenceImageNames: referenceAssignment.map((item) => item.name),
+        referenceImageId: referenceAssignment[0]?.id || "",
+        referenceImageName: referenceAssignment[0]?.name || "",
+        t2iPrompt: promptState.imagePrompt,
         i2vStartPrompt: cut.i2vStartPrompt,
         i2vMotionPrompt: cut.i2vMotionPrompt,
         i2vEndPrompt: cut.i2vEndPrompt,
@@ -2097,16 +2400,29 @@
     return {
       summary: `총 ${cutCount}컷이 적당합니다. ${duration.min}초~${duration.max}초 안에서 컷당 약 ${secondsPerCut}초로 운영하면 브랜드 무드와 엔드 프레임까지 자연스럽게 이어집니다.`,
       projectDraft: buildProjectDraft(payload, duration),
-      cuts: Array.from({ length: cutCount }, (_, index) => ({
-        sceneTitle: `${index + 1}. ${names[index] || `컷 ${index + 1}`}`,
-        durationLabel: `약 ${secondsPerCut}초`,
-        caption: `약 ${secondsPerCut}초 분량. ${names[index] || `컷 ${index + 1}`}에서 ${subject}의 무드와 브랜드 톤을 또렷하게 보여줍니다.`,
-        referenceImageIndex: referenceCount > 0 ? index % referenceCount : -1,
-        t2iPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, premium Korean commercial still, ${mood}, preserve the core styling and subject anchors from the matched reference image, elevate it into an ad-ready frame, detailed material texture, no text, no watermark`,
-        i2vStartPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, start frame, ${mood}, reference-informed fashion commercial opening frame`,
-        i2vMotionPrompt: `controlled camera motion, premium editorial pacing, preserve subject silhouette and key styling anchors from the matched reference image`,
-        i2vEndPrompt: `${subject}, ${names[index] || `shot ${index + 1}`}, end frame, refined brand-commercial finish`
-      }))
+      cuts: Array.from({ length: cutCount }, (_, index) => {
+        const referenceImageIndexes = buildReferenceIndexList(referenceCount, index, referenceCount > 2 ? 3 : 2);
+        const imagePromptMode = referenceImageIndexes.length > 0 ? "i2i" : "t2i";
+        const basePrompt = `${subject}, ${names[index] || `shot ${index + 1}`}, premium Korean commercial still, ${mood}`;
+
+        return {
+          sceneTitle: `${index + 1}. ${names[index] || `컷 ${index + 1}`}`,
+          durationLabel: `약 ${secondsPerCut}초`,
+          caption: `약 ${secondsPerCut}초 분량. ${names[index] || `컷 ${index + 1}`}에서 ${subject}의 무드와 브랜드 톤을 또렷하게 보여줍니다.`,
+          referenceImageIndexes,
+          referenceImageIndex: referenceImageIndexes[0] ?? -1,
+          imagePromptMode,
+          i2iPrompt: imagePromptMode === "i2i"
+            ? `${basePrompt}, transform and combine the assigned reference images into a newly designed advertising frame, preserve the strongest subject, styling, and mood anchors without recreating the source frame literally, premium art direction, no text, no watermark`
+            : "",
+          t2iPrompt: imagePromptMode === "t2i"
+            ? `${basePrompt}, original text-to-image concept, premium advertising photography, elegant composition, no text, no watermark`
+            : "",
+          i2vStartPrompt: `${basePrompt}, start frame, derived from the redesigned still, continuity-ready commercial opening frame`,
+          i2vMotionPrompt: `controlled camera motion, premium editorial pacing, preserve continuity from the redesigned still while smoothly bridging into the next shot`,
+          i2vEndPrompt: `${basePrompt}, end frame, refined brand-commercial finish`
+        };
+      })
     };
   }
 
@@ -2123,8 +2439,8 @@
       const item = document.createElement("article");
       item.className = "ai-reference-item";
       item.innerHTML = `
-        <img class="ai-reference-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
-        <button class="ai-reference-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+        <img class="ai-reference-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "첨부 이미지")}">
+        <button class="ai-reference-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="첨부 이미지 삭제" title="첨부 이미지 삭제">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6L18 18M18 6L6 18"></path>
           </svg>
@@ -2206,7 +2522,7 @@
       } catch {}
       return true;
     } catch {
-      setStatus("레퍼런스 이미지를 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.", "warning");
+      setStatus("첨부 이미지를 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.", "warning");
       return false;
     }
   }
@@ -2232,7 +2548,7 @@
       return;
     }
 
-    const imageTitle = title || referenceImage?.name || "레퍼런스 이미지";
+    const imageTitle = title || referenceImage?.name || "첨부 이미지";
     referenceLightboxTitleEl.textContent = imageTitle;
     referenceLightboxImageEl.src = referenceImage?.dataUrl || "";
     referenceLightboxImageEl.alt = imageTitle;
@@ -2295,10 +2611,10 @@
       item.dataset.referencePreview = image.id;
       item.setAttribute("role", "button");
       item.setAttribute("tabindex", "0");
-      item.setAttribute("aria-label", `${image.name || "레퍼런스 이미지"} 확대 보기`);
+      item.setAttribute("aria-label", `${image.name || "첨부 이미지"} 확대 보기`);
       item.innerHTML = `
-        <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
-        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+        <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "첨부 이미지")}">
+        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="첨부 이미지 삭제" title="첨부 이미지 삭제">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6L18 18M18 6L6 18"></path>
           </svg>
@@ -2343,14 +2659,14 @@
       item.dataset.referencePreview = image.id;
       item.setAttribute("role", "button");
       item.setAttribute("tabindex", "0");
-      item.setAttribute("aria-label", `${image.name || "레퍼런스 이미지"} 확대 보기`);
+      item.setAttribute("aria-label", `${image.name || "첨부 이미지"} 확대 보기`);
       item.style.setProperty("--reference-accent-rgb", image.accentRgb || "37 99 235");
       item.innerHTML = `
         <span class="ai-reference-inline-order">${orderLabel}</span>
         <div class="ai-reference-inline-photo">
-          <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
+          <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "첨부 이미지")}">
         </div>
-        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="첨부 이미지 삭제" title="첨부 이미지 삭제">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6L18 18M18 6L6 18"></path>
           </svg>
@@ -2372,11 +2688,11 @@
 
     if (project.aiBrief?.trim()) {
       const referenceMeta = aiReferenceImages.length > 0
-        ? ` · 레퍼런스 ${aiReferenceImages.length}장 · iw ${sanitizeReferenceWeight(project.referenceWeight)}`
+        ? ` · 첨부 이미지 ${aiReferenceImages.length}장 · iw ${sanitizeReferenceWeight(project.referenceWeight)}`
         : "";
       aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 브리프 초안 준비 완료${referenceMeta}`;
     } else {
-      aiPlanMetaEl.textContent = "브리프와 레퍼런스 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
+      aiPlanMetaEl.textContent = "브리프와 첨부 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
     }
 
     aiSummaryOutputEl.textContent = project.aiSummary?.trim()
@@ -2404,7 +2720,7 @@
         <span class="sequence-index">+</span>
         <div>
           <strong>아직 생성된 컷이 없습니다</strong>
-          <p>브리프와 레퍼런스 이미지를 넣고 AI 콘티 초안 생성을 눌러주세요.</p>
+          <p>브리프와 첨부 이미지를 넣고 AI 콘티 초안 생성을 눌러주세요.</p>
         </div>
       `;
       aiSequenceOutputEl.appendChild(emptyItem);
@@ -2415,16 +2731,14 @@
     const usageMap = new Map();
 
     panels.forEach((panel, index) => {
-      if (!panel.referenceImageId) {
-        return;
-      }
-
-      const usageList = usageMap.get(panel.referenceImageId) ?? [];
-      usageList.push({
-        label: `S${String(index + 1).padStart(2, "0")}`,
-        panelId: panel.id
+      getPanelReferenceImageIds(panel).forEach((referenceImageId) => {
+        const usageList = usageMap.get(referenceImageId) ?? [];
+        usageList.push({
+          label: `S${String(index + 1).padStart(2, "0")}`,
+          panelId: panel.id
+        });
+        usageMap.set(referenceImageId, usageList);
       });
-      usageMap.set(panel.referenceImageId, usageList);
     });
 
     return usageMap;
@@ -2466,14 +2780,14 @@
       item.draggable = true;
       item.setAttribute("role", "button");
       item.setAttribute("tabindex", "0");
-      item.setAttribute("aria-label", `${image.name || "레퍼런스 이미지"} 크게 보기`);
+      item.setAttribute("aria-label", `${image.name || "첨부 이미지"} 크게 보기`);
       item.style.setProperty("--reference-accent-rgb", image.accentRgb || "37 99 235");
       item.innerHTML = `
         <span class="ai-reference-inline-order">${orderLabel}</span>
         <div class="ai-reference-inline-photo">
-          <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "레퍼런스 이미지")}">
+          <img class="ai-reference-inline-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || "첨부 이미지")}">
         </div>
-        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="레퍼런스 이미지 삭제" title="레퍼런스 이미지 삭제">
+        <button class="ai-reference-inline-remove" type="button" data-reference-remove="${escapeHtml(image.id)}" aria-label="첨부 이미지 삭제" title="첨부 이미지 삭제">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6L18 18M18 6L6 18"></path>
           </svg>
@@ -2628,7 +2942,7 @@
     await persistAiReferenceImages();
     renderAiReferenceImages();
     updateHistoryUI();
-    setStatus("레퍼런스 이미지 순서를 변경했습니다.");
+    setStatus("첨부 이미지 순서를 변경했습니다.");
   }
 
   function focusPanelFromReferenceTag(panelId) {
@@ -2793,16 +3107,23 @@
 
   function buildSelectedPanelsPayload(selectedPanels) {
     return selectedPanels.map((panel) => ({
+      imagePromptMode: getPromptMode(panel),
+      i2iPrompt: getPromptMode(panel) === "i2i" ? (panel.t2iPrompt || "") : "",
+      referenceImageIds: getPanelReferenceImageIds(panel),
+      referenceImageNames: getPanelReferenceImageNames(panel),
       panelId: panel.id,
       sceneTitle: panel.sceneTitle || "",
       durationLabel: panel.durationLabel || "",
       caption: panel.caption || "",
       referenceImageId: panel.referenceImageId || "",
       referenceImageName: panel.referenceImageName || "",
+      referenceImageIndexes: getPanelReferenceImageIds(panel)
+        .map((referenceId) => aiReferenceImages.findIndex((image) => image.id === referenceId))
+        .filter((referenceIndex) => referenceIndex >= 0),
       referenceImageIndex: panel.referenceImageId
         ? aiReferenceImages.findIndex((image) => image.id === panel.referenceImageId)
         : -1,
-      t2iPrompt: panel.t2iPrompt || "",
+      t2iPrompt: getPromptMode(panel) === "t2i" ? (panel.t2iPrompt || "") : "",
       i2vStartPrompt: panel.i2vStartPrompt || "",
       i2vMotionPrompt: panel.i2vMotionPrompt || "",
       i2vEndPrompt: panel.i2vEndPrompt || "",
@@ -2823,8 +3144,11 @@
       sceneTitle,
       durationLabel,
       caption,
+      referenceImageIndexes: normalizeReferenceIndexes(panel?.referenceImageIndexes, panel?.referenceImageIndex),
       referenceImageIndex: Number.isInteger(panel?.referenceImageIndex) ? panel.referenceImageIndex : -1,
-      t2iPrompt: panel?.t2iPrompt || "",
+      imagePromptMode: getPromptMode(panel || {}),
+      i2iPrompt: getPromptMode(panel || {}) === "i2i" ? (panel?.t2iPrompt || "") : "",
+      t2iPrompt: getPromptMode(panel || {}) === "t2i" ? (panel?.t2iPrompt || "") : "",
       i2vStartPrompt: panel?.i2vStartPrompt || "",
       i2vMotionPrompt: panel?.i2vMotionPrompt || "",
       i2vEndPrompt: panel?.i2vEndPrompt || ""
@@ -2850,24 +3174,35 @@
         const promptSeed = [
           sceneTitle,
           caption,
-          panel.referenceImageName ? `reference ${panel.referenceImageName}` : "",
+          ...getPanelReferenceImageNames(panel).map((referenceName) => `reference ${referenceName}`),
           payload?.brief || ""
         ].filter(Boolean).join(", ");
+        const referenceImageIndexes = normalizeReferenceIndexes(panel.referenceImageIndexes, panel.referenceImageIndex);
+        const imagePromptMode = referenceImageIndexes.length > 0 ? "i2i" : "t2i";
 
         return {
           sceneTitle,
           durationLabel,
           caption,
-          referenceImageIndex: Number.isInteger(panel.referenceImageIndex) ? panel.referenceImageIndex : -1,
-          t2iPrompt: panel.t2iPrompt?.trim()
-            ? `${panel.t2iPrompt.trim()}, refined commercial lighting, preserve key reference anchors, polished premium composition, no text, no watermark`
-            : `${promptSeed}, premium commercial still, preserve the original reference styling, elegant lighting, polished composition, no text, no watermark`,
+          referenceImageIndexes,
+          referenceImageIndex: referenceImageIndexes[0] ?? -1,
+          imagePromptMode,
+          i2iPrompt: imagePromptMode === "i2i"
+            ? (panel.t2iPrompt?.trim()
+              ? `${panel.t2iPrompt.trim()}, transform the assigned reference images into a fresh commercial still, keep continuity anchors but redesign the composition and advertising intent, polished premium composition, no text, no watermark`
+              : `${promptSeed}, premium commercial still, transform and combine the assigned reference images into a redesigned advertising frame, elegant lighting, polished composition, no text, no watermark`)
+            : "",
+          t2iPrompt: imagePromptMode === "t2i"
+            ? (panel.t2iPrompt?.trim()
+              ? `${panel.t2iPrompt.trim()}, strengthen the composition and advertising clarity, polished premium composition, no text, no watermark`
+              : `${promptSeed}, premium commercial still, original text-to-image concept, elegant lighting, polished composition, no text, no watermark`)
+            : "",
           i2vStartPrompt: panel.i2vStartPrompt?.trim()
-            ? `${panel.i2vStartPrompt.trim()}, refined opening frame`
-            : `${promptSeed}, opening frame, premium commercial look`,
+            ? `${panel.i2vStartPrompt.trim()}, refined opening frame derived from the redesigned still`
+            : `${promptSeed}, opening frame derived from the redesigned still, premium commercial look`,
           i2vMotionPrompt: panel.i2vMotionPrompt?.trim()
-            ? `${panel.i2vMotionPrompt.trim()}, cleaner camera rhythm, smoother motion arc`
-            : "subtle cinematic camera move, controlled subject motion, refined pacing, premium commercial polish",
+            ? `${panel.i2vMotionPrompt.trim()}, cleaner camera rhythm, smoother motion arc, bridge naturally into the next scene`
+            : "subtle cinematic camera move, controlled subject motion, refined pacing, premium commercial polish, bridge naturally into the next scene",
           i2vEndPrompt: panel.i2vEndPrompt?.trim()
             ? `${panel.i2vEndPrompt.trim()}, refined closing frame`
             : `${promptSeed}, closing frame, polished brand finish`
@@ -2905,19 +3240,26 @@
       }
 
       const cut = plan.cuts[match.index] || createSelectedFallbackCut(match.panel, match.index);
-      const referenceAssignment = resolveReferenceAssignment(cut.referenceImageIndex, match.index);
+      const promptState = resolveCutImagePrompt(cut);
+      const referenceAssignment = resolveReferenceAssignment(
+        cut.referenceImageIndexes ?? cut.referenceImageIndex,
+        match.index
+      );
 
       return normalizePanel({
         ...panel,
         viewMode: "t2i",
+        imagePromptMode: promptState.imagePromptMode,
         t2iCollapsed: false,
         i2vCollapsed: true,
         sceneTitle: cut.sceneTitle,
         durationLabel: cut.durationLabel,
         caption: cut.caption,
-        referenceImageId: referenceAssignment?.id || panel.referenceImageId || "",
-        referenceImageName: referenceAssignment?.name || panel.referenceImageName || "",
-        t2iPrompt: cut.t2iPrompt,
+        referenceImageIds: referenceAssignment.map((item) => item.id),
+        referenceImageNames: referenceAssignment.map((item) => item.name),
+        referenceImageId: referenceAssignment[0]?.id || panel.referenceImageId || "",
+        referenceImageName: referenceAssignment[0]?.name || panel.referenceImageName || "",
+        t2iPrompt: promptState.imagePrompt,
         i2vStartPrompt: cut.i2vStartPrompt,
         i2vMotionPrompt: cut.i2vMotionPrompt,
         i2vEndPrompt: cut.i2vEndPrompt

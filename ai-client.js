@@ -81,6 +81,12 @@ window.ShotBoardAI = {
                   durationLabel: { type: "string" },
                   caption: { type: "string" },
                   referenceImageIndex: { type: "integer" },
+                  referenceImageIndexes: {
+                    type: "array",
+                    items: { type: "integer" }
+                  },
+                  imagePromptMode: { type: "string" },
+                  i2iPrompt: { type: "string" },
                   t2iPrompt: { type: "string" },
                   i2vStartPrompt: { type: "string" },
                   i2vMotionPrompt: { type: "string" },
@@ -90,6 +96,9 @@ window.ShotBoardAI = {
                   "sceneTitle",
                   "durationLabel",
                   "caption",
+                  "referenceImageIndexes",
+                  "imagePromptMode",
+                  "i2iPrompt",
                   "t2iPrompt",
                   "i2vStartPrompt",
                   "i2vMotionPrompt",
@@ -104,29 +113,86 @@ window.ShotBoardAI = {
     };
   },
 
-  buildPrompt(payload) {
-    const brief = payload?.brief?.trim() || "";
-    const project = payload?.project || {};
-    const existingCount = Number(payload?.existingPanelCount) || 0;
-    const referenceImageCount = Number(payload?.referenceImageCount) || 0;
-    const referenceWeight = Number(payload?.referenceWeight) || 2;
-    const selectedPanels = Array.isArray(payload?.selectedPanels) ? payload.selectedPanels : [];
-    const isSelectedRegeneration = payload?.generationMode === "selected-panels";
+  normalizeReferenceImageIndexes(referenceImageIndexes, referenceImageIndex) {
+    const values = Array.isArray(referenceImageIndexes)
+      ? referenceImageIndexes
+      : Number.isInteger(referenceImageIndex)
+        ? [referenceImageIndex]
+        : [];
 
-    if (isSelectedRegeneration) {
-      const selectedPanelCount = Number(payload?.selectedPanelCount) || selectedPanels.length || 1;
-      const selectedPanelContext = selectedPanels.map((panel, index) => [
+    return values
+      .filter((value, index, items) => Number.isInteger(value) && value >= 0 && items.indexOf(value) === index);
+  },
+
+  inferImagePromptMode(cut, referenceImageIndexes = this.normalizeReferenceImageIndexes(
+    cut?.referenceImageIndexes,
+    cut?.referenceImageIndex
+  )) {
+    const explicitMode = typeof cut?.imagePromptMode === "string"
+      ? cut.imagePromptMode.trim().toLowerCase()
+      : "";
+
+    if (explicitMode === "i2i" || explicitMode === "t2i") {
+      return explicitMode;
+    }
+
+    return referenceImageIndexes.length > 0 || (typeof cut?.i2iPrompt === "string" && cut.i2iPrompt.trim())
+      ? "i2i"
+      : "t2i";
+  },
+
+  buildReferenceCatalog(referenceImages) {
+    if (!Array.isArray(referenceImages) || referenceImages.length === 0) {
+      return "- none";
+    }
+
+    return referenceImages.map((image, index) => {
+      const width = Number(image?.width) || "?";
+      const height = Number(image?.height) || "?";
+      return `- [${index}] ${image?.name || `reference-${index + 1}.jpg`} (${width}x${height})`;
+    }).join("\n");
+  },
+
+  buildSelectedPanelContext(selectedPanels) {
+    return selectedPanels.map((panel, index) => {
+      const referenceImageIndexes = this.normalizeReferenceImageIndexes(
+        panel?.referenceImageIndexes,
+        panel?.referenceImageIndex
+      );
+      const imagePromptMode = this.inferImagePromptMode(panel, referenceImageIndexes);
+
+      return [
         `Selected cut ${index + 1}:`,
         `- sceneTitle: ${panel?.sceneTitle || ""}`,
         `- durationLabel: ${panel?.durationLabel || ""}`,
         `- caption: ${panel?.caption || ""}`,
         `- referenceImageName: ${panel?.referenceImageName || ""}`,
         `- referenceImageIndex: ${Number.isInteger(panel?.referenceImageIndex) ? panel.referenceImageIndex : -1}`,
+        `- referenceImageIndexes: ${JSON.stringify(referenceImageIndexes)}`,
+        `- imagePromptMode: ${imagePromptMode}`,
+        `- currentI2I: ${panel?.i2iPrompt || ""}`,
         `- currentT2I: ${panel?.t2iPrompt || ""}`,
         `- currentI2VStart: ${panel?.i2vStartPrompt || ""}`,
         `- currentI2VMotion: ${panel?.i2vMotionPrompt || ""}`,
         `- currentI2VEnd: ${panel?.i2vEndPrompt || ""}`
-      ].join("\n")).join("\n\n");
+      ].join("\n");
+    }).join("\n\n");
+  },
+
+  buildPrompt(payload) {
+    const brief = payload?.brief?.trim() || "";
+    const project = payload?.project || {};
+    const existingCount = Number(payload?.existingPanelCount) || 0;
+    const referenceImageCount = Number(payload?.referenceImageCount) || 0;
+    const referenceWeight = Number(payload?.referenceWeight) || 2;
+    const referenceImages = Array.isArray(payload?.referenceImages) ? payload.referenceImages : [];
+    const referenceCatalog = this.buildReferenceCatalog(referenceImages);
+    const selectedPanels = Array.isArray(payload?.selectedPanels) ? payload.selectedPanels : [];
+    const isSelectedRegeneration = payload?.generationMode === "selected-panels";
+
+    if (isSelectedRegeneration) {
+      const selectedPanelCount = Number(payload?.selectedPanelCount) || selectedPanels.length || 1;
+      const selectedPanelContext = this.buildSelectedPanelContext(selectedPanels);
 
       return [
         "You are an AI storyboard refiner for short commercial videos.",
@@ -139,11 +205,19 @@ window.ShotBoardAI = {
         "Requirements:",
         `- Return exactly ${selectedPanelCount} cuts in the same order as the selected cuts.`,
         "- summary, sceneTitle, durationLabel, and caption must be written in natural Korean.",
-        "- durationLabel should use Korean style like '약 3초'.",
+        "- durationLabel should be written naturally in Korean and indicate the rough shot length.",
         "- caption should naturally mention how many seconds this shot roughly takes.",
-        "- t2iPrompt, i2vStartPrompt, i2vMotionPrompt, and i2vEndPrompt should be written in strong production-friendly English.",
-        "- When reference images are provided, use them to preserve subject, styling, composition, and mood anchors.",
-        "- referenceImageIndex should point to the best matching uploaded reference image for each regenerated cut. Use 0-based indexes. If none fit, use -1.",
+        "- imagePromptMode, i2iPrompt, t2iPrompt, i2vStartPrompt, i2vMotionPrompt, and i2vEndPrompt must be written in strong production-friendly English.",
+        "- Return referenceImageIndexes as an ordered array of the uploaded attached-image indexes that should guide each cut. Use 0-based indexes.",
+        "- Return referenceImageIndex as the primary reference for backward compatibility. Use the first item from referenceImageIndexes or -1.",
+        "- If attached images exist for this request, every cut must use at least one attached image, set imagePromptMode to 'i2i', and write an i2iPrompt for image-to-image generation.",
+        "- Use 't2i' only when there are truly no attached images in the request.",
+        "- Leave the unused image prompt field as an empty string.",
+        "- Do not merely caption, paraphrase, or restate the attached images. Reinterpret the chosen attached-image set into a fresh, polished, ad-ready frame.",
+        "- When multiple attached images are assigned, combine them intentionally. One can drive subject identity, another styling, product detail, composition, lighting, texture, or mood.",
+        "- Preserve the right anchors from the attached images without copying the uploaded frame literally.",
+        "- I2I prompts should describe how to transform or recombine the selected attached images into a newly art-directed commercial still, not how to recreate the source image as-is.",
+        "- i2vStartPrompt, i2vMotionPrompt, and i2vEndPrompt must make the shot continue smoothly into the next cut in sequence. The end state of each shot should set up the next shot naturally.",
         "- projectDraft fields can stay close to the current project context and do not need to invent a new project direction.",
         "- If preview video or poster URLs do not exist, return empty strings.",
         "",
@@ -157,6 +231,9 @@ window.ShotBoardAI = {
         `- notes: ${project.notes || ""}`,
         `- referenceImageCount: ${referenceImageCount}`,
         `- referenceImageWeight: ${referenceWeight}`,
+        "",
+        "Uploaded attached images (0-based index order, same order as the attached images):",
+        referenceCatalog,
         "",
         "Original user brief:",
         brief,
@@ -175,17 +252,25 @@ window.ShotBoardAI = {
       "- Infer an appropriate number of cuts for a 15-30 second commercial unless the brief explicitly requests something else.",
       "- Write concise but production-usable shot descriptions.",
       "- summary, sceneTitle, durationLabel, and caption must be written in natural Korean.",
-      "- durationLabel should use Korean style like '약 3초'.",
+      "- durationLabel should be written naturally in Korean and indicate the rough shot length.",
       "- caption should naturally mention how many seconds this shot roughly takes.",
-      "- referenceImageIndex should point to the most relevant uploaded reference image for each cut. Use 0-based indexes. If there are no reference images, omit it or use -1.",
-      "- t2iPrompt, i2vStartPrompt, i2vMotionPrompt, and i2vEndPrompt should be written in strong production-friendly English for image/video generation.",
+      "- Return referenceImageIndexes as an ordered array of the uploaded attached-image indexes that guide each cut. Use 0-based indexes.",
+      "- Return referenceImageIndex as the primary reference for backward compatibility. Use the first item from referenceImageIndexes or -1.",
+      "- imagePromptMode, i2iPrompt, t2iPrompt, i2vStartPrompt, i2vMotionPrompt, and i2vEndPrompt must be written in strong production-friendly English for image and video generation.",
       "- projectDraft.title, sequence, runtime, tone, logline, and notes must be filled in Korean for the left sidebar.",
       "- projectDraft.notes should include camera movement, emotional flow, visual tone, or edit direction.",
-      "- Write T2I prompts for Nano Banana Pro 2 style image generation.",
+      "- If attached images exist for this request, every cut must use at least one attached image, set imagePromptMode to 'i2i', and write an i2iPrompt for image-to-image generation.",
+      "- Use 't2i' only when there are truly no attached images in the request.",
+      "- Leave the unused image prompt field as an empty string.",
+      "- Do not simply caption the attached images or describe them literally. Reinterpret, restage, and elevate the chosen attached images into a fresh ad-ready frame.",
+      "- Multiple attached images may be combined in one cut. Use them intentionally rather than averaging everything together.",
+      "- When attached images exist, preserve the right subject, product, styling, composition, lighting, or mood anchors while still producing a newly designed shot.",
+      "- Write I2I prompts for Nano Banana Pro 2 style attached-image-guided generation and T2I prompts only when a cut has no attached images.",
+      "- I2I prompts should explain how to transform or combine the assigned attached images into a new premium commercial still instead of narrating the source image.",
       "- Write I2V prompts for Kling or Higgsfield using start frame, motion, and end frame fields.",
-      "- Keep prompts visually specific and ad-ready.",
+      "- Keep prompts visually specific, ad-ready, and sequenced so each shot can flow smoothly into the next one.",
+      "- For I2V, make the start, motion, and end prompts continue naturally into the next cut. The end of one shot should tee up the opening of the next shot.",
       "- If preview video or poster URLs do not exist, return empty strings.",
-      "- When reference images are provided, analyze them and use their subject, styling, composition, and mood as the basis for T2I and I2V prompts.",
       "- referenceImageWeight describes how strongly the original reference images should be preserved. Higher values should keep more composition, silhouette, and styling anchors.",
       "",
       "Project context:",
@@ -199,6 +284,9 @@ window.ShotBoardAI = {
       `- currentPanelCount: ${existingCount}`,
       `- referenceImageCount: ${referenceImageCount}`,
       `- referenceImageWeight: ${referenceWeight}`,
+      "",
+      "Uploaded attached images (0-based index order, same order as the attached images):",
+      referenceCatalog,
       "",
       "User brief:",
       brief
@@ -255,12 +343,35 @@ window.ShotBoardAI = {
       throw new Error(`Gemini JSON parse failed: ${error.message}`);
     }
 
+    const cuts = Array.isArray(parsed?.cuts)
+      ? parsed.cuts.map((cut) => {
+        const referenceImageIndexes = this.normalizeReferenceImageIndexes(
+          cut?.referenceImageIndexes,
+          cut?.referenceImageIndex
+        );
+        const imagePromptMode = this.inferImagePromptMode(cut, referenceImageIndexes);
+        const rawI2IPrompt = typeof cut?.i2iPrompt === "string" ? cut.i2iPrompt : "";
+        const rawT2IPrompt = typeof cut?.t2iPrompt === "string" ? cut.t2iPrompt : "";
+        const i2iPrompt = rawI2IPrompt || (referenceImageIndexes.length > 0 ? rawT2IPrompt : "");
+        const t2iPrompt = rawT2IPrompt || rawI2IPrompt;
+
+        return {
+          ...cut,
+          referenceImageIndexes,
+          referenceImageIndex: referenceImageIndexes[0] ?? -1,
+          imagePromptMode,
+          i2iPrompt,
+          t2iPrompt
+        };
+      })
+      : [];
+
     return {
       summary: typeof parsed?.summary === "string" ? parsed.summary : "",
       previewVideoUrl: typeof parsed?.previewVideoUrl === "string" ? parsed.previewVideoUrl : "",
       previewPosterUrl: typeof parsed?.previewPosterUrl === "string" ? parsed.previewPosterUrl : "",
       projectDraft: parsed?.projectDraft && typeof parsed.projectDraft === "object" ? parsed.projectDraft : {},
-      cuts: Array.isArray(parsed?.cuts) ? parsed.cuts : []
+      cuts
     };
   }
 };

@@ -92,7 +92,7 @@
             <div class="sidebar-card-header">
               <p class="sidebar-eyebrow">AI Director</p>
               <h2>브리프에서 컷 생성</h2>
-              <p class="sidebar-card-copy">두루뭉실한 설명도 컷 수와 레퍼런스 기반 T2I, I2V 흐름 초안으로 정리합니다.</p>
+              <p class="sidebar-card-copy">두루뭉실한 설명도 컷 수와 첨부 이미지 기반 I2I, I2V 흐름 초안으로 정리합니다.</p>
             </div>
 
             <label class="sidebar-field">
@@ -107,7 +107,7 @@
 
             <div class="sidebar-field">
               <div class="sidebar-label-row">
-                <span class="sidebar-label">레퍼런스 이미지</span>
+              <span class="sidebar-label">첨부 이미지</span>
                 <span id="aiReferenceCount" class="sidebar-inline-meta">0장</span>
               </div>
 
@@ -115,7 +115,7 @@
                 <input id="aiReferenceInput" type="file" accept="image/*" multiple hidden>
                 <div class="ai-reference-dropzone__copy">
                   <strong>이미지 드래그 또는 클릭</strong>
-                  <p>참고 이미지를 최대 10장까지 넣고, 그 이미지를 바탕으로 컷별 T2I와 I2V 초안을 생성합니다.</p>
+                  <p>첨부 이미지를 최대 10장까지 넣고, 그 이미지를 바탕으로 컷별 I2I와 I2V 초안을 생성합니다.</p>
                 </div>
                 <div id="aiReferenceInlineGrid" class="ai-reference-inline-grid" hidden></div>
               </label>
@@ -130,7 +130,7 @@
               </label>
 
               <label class="sidebar-field">
-                <span class="sidebar-label">레퍼런스 강도</span>
+                <span class="sidebar-label">이미지 유지 강도</span>
                 <input
                   id="aiReferenceWeightInput"
                   class="sidebar-input"
@@ -184,7 +184,7 @@
               <p><strong>연결 시작</strong> 카드 오른쪽 파란 점을 잡고 다음 카드 쪽으로 드래그하세요.</p>
               <p><strong>연결 받기</strong> 다른 카드 위에 놓거나 왼쪽 점에 꽂으면 그 컷으로 이어집니다.</p>
               <p><strong>연결 해제</strong> 카드 아래의 `연결 지우기` 버튼으로 분기를 정리할 수 있습니다.</p>
-              <p><strong>프롬프트 접기</strong> T2I / I2V 패널 오른쪽 화살표를 눌러 카드 길이를 줄이세요.</p>
+              <p><strong>프롬프트 접기</strong> I2I / T2I / I2V 패널 오른쪽 화살표를 눌러 카드 길이를 줄이세요.</p>
             </div>
           </section>
 
@@ -468,7 +468,9 @@
       <div class="media-stage">
         <div class="media-switcher" role="tablist" aria-label="컷 미디어 보기">
           <button class="media-view-button" type="button" data-view="image">IMG</button>
-          <button class="media-view-button" type="button" data-view="t2i">T2I</button>
+          <button class="media-view-button" type="button" data-view="t2i">
+            <span class="media-view-button-label" data-view-label="t2i">T2I</span>
+          </button>
           <button class="media-view-button" type="button" data-view="i2v">I2V</button>
         </div>
 
@@ -482,11 +484,14 @@
           </div>
         </label>
 
-        <section class="prompt-panel media-panel" data-panel-view="t2i" hidden>
+        <section class="prompt-panel media-panel" data-panel-view="t2i" data-prompt-kind="t2i" hidden>
           <div class="prompt-panel-header">
             <div class="prompt-panel-copy">
               <span class="prompt-platform">Nano Banana Pro 2</span>
-              <strong class="prompt-panel-title">T2I Prompt</strong>
+              <strong class="prompt-panel-title" data-prompt-title>
+                <span data-prompt-title-kind="t2i">T2I Prompt</span>
+                <span data-prompt-title-kind="i2i" hidden>I2I Prompt</span>
+              </strong>
             </div>
 
             <button class="icon-button prompt-toggle-button" type="button" data-prompt-kind="t2i" aria-expanded="true" aria-label="T2I 프롬프트 접기" title="프롬프트 접기">
@@ -496,7 +501,8 @@
             </button>
           </div>
           <div class="prompt-panel-body">
-            <div class="reference-bookmark" hidden>
+            <div class="reference-bookmark-list" data-reference-bookmark-list role="list">
+              <div class="reference-bookmark" data-reference-bookmark-item hidden role="listitem">
               <div class="reference-bookmark-thumb-wrap">
                 <img class="reference-bookmark-thumb" alt="" hidden>
               </div>
@@ -504,8 +510,9 @@
                 <span class="reference-bookmark-label">Reference</span>
                 <strong class="reference-bookmark-name">연결된 레퍼런스</strong>
               </div>
+              </div>
             </div>
-            <textarea class="prompt-input t2i-prompt-input" rows="7" placeholder="이 컷용 T2I 프롬프트가 여기에 들어옵니다."></textarea>
+            <textarea class="prompt-input t2i-prompt-input" rows="7" placeholder="이 컷용 이미지 프롬프트가 여기에 들어옵니다."></textarea>
           </div>
           <p class="prompt-collapsed-preview" hidden></p>
         </section>
@@ -565,7 +572,7 @@
     <button id="referenceLightboxBackdrop" class="reference-lightbox-backdrop" type="button" aria-label="닫기"></button>
     <div class="reference-lightbox-dialog" role="dialog" aria-modal="true" aria-labelledby="referenceLightboxTitle">
       <div class="reference-lightbox-header">
-        <strong id="referenceLightboxTitle" class="reference-lightbox-title">레퍼런스 이미지</strong>
+        <strong id="referenceLightboxTitle" class="reference-lightbox-title">첨부 이미지</strong>
         <button id="referenceLightboxClose" class="reference-lightbox-close" type="button" aria-label="확대 이미지 닫기">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6L18 18M18 6L6 18"></path>
