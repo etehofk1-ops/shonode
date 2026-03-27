@@ -7,6 +7,10 @@
   const AI_REFERENCE_DB_NAME = "shotboard-ai-reference-db-v1";
   const AI_REFERENCE_DB_STORE_NAME = "reference-images";
   const AI_REFERENCE_DB_RECORD_KEY = "active-project";
+  const WORKSPACE_LIBRARY_STORAGE_KEY = "shonode-workspace-library-v1";
+  const ACTIVE_WORKSPACE_STORAGE_KEY = "shonode-active-workspace-v1";
+  const WORKSPACE_LIBRARY_DB_NAME = "shonode-workspace-library-db-v1";
+  const WORKSPACE_LIBRARY_DB_STORE_NAME = "workspace-snapshots";
   const AI_REFERENCE_IMAGE_LIMIT = 10;
 
   const aiBriefInputEl = document.getElementById("aiBriefInput");
@@ -51,6 +55,10 @@
   const togglePreviewLabelEl = document.getElementById("togglePreviewLabel");
   const previewVideoUrlInputEl = document.getElementById("previewVideoUrlInput");
   const previewPosterUrlInputEl = document.getElementById("previewPosterUrlInput");
+  const createWorkspaceButtonEl = document.getElementById("createWorkspaceButton");
+  const duplicateWorkspaceButtonEl = document.getElementById("duplicateWorkspaceButton");
+  const workspaceLibraryMetaEl = document.getElementById("workspaceLibraryMeta");
+  const workspaceLibraryListEl = document.getElementById("workspaceLibraryList");
   const previewVideoEl = document.getElementById("previewVideo");
   const previewVideoEmptyEl = document.getElementById("previewVideoEmpty");
   const connectionLayerEl = document.getElementById("connectionLayer");
@@ -74,6 +82,9 @@
   const originalUpdatePanel = updatePanel;
   const originalCreateHistorySnapshot = createHistorySnapshot;
   const originalRestoreHistorySnapshot = restoreHistorySnapshot;
+  const originalPersistProject = persistProject;
+  const originalPersistPanels = persistPanels;
+  const originalPersistViewState = persistViewState;
 
   let aiGenerating = false;
   let aiGenerationStageIndex = 0;
@@ -86,6 +97,12 @@
   let leftRailCollapsed = loadRailCollapsed("left");
   let rightRailCollapsed = loadRailCollapsed("right");
   let draggedReferenceImageId = "";
+  let workspaceLibraryItems = loadWorkspaceLibraryItems();
+  let activeWorkspaceId = loadActiveWorkspaceId() || "";
+  let workspaceLibraryInitialized = false;
+  let workspaceLibrarySyncTimeoutId = null;
+  let workspaceLibrarySyncPromise = Promise.resolve();
+  let workspaceImportInFlight = false;
 
   getDefaultProject = function overrideDefaultProject() {
     return {
@@ -205,9 +222,31 @@
     if (aiReferenceWeightInputEl) {
       aiReferenceWeightInputEl.value = sanitizeReferenceWeight(project.referenceWeight);
     }
+    renderWorkspaceLibrary();
     renderAiReferenceImages();
     renderAiOutputs();
     renderPreviewSidebar();
+  };
+
+  persistProject = function overridePersistProject(...args) {
+    const didPersist = originalPersistProject(...args);
+    if (didPersist) {
+      scheduleWorkspaceLibrarySync();
+    }
+    return didPersist;
+  };
+
+  persistPanels = function overridePersistPanels(...args) {
+    const didPersist = originalPersistPanels(...args);
+    if (didPersist) {
+      scheduleWorkspaceLibrarySync();
+    }
+    return didPersist;
+  };
+
+  persistViewState = function overridePersistViewState(...args) {
+    originalPersistViewState(...args);
+    scheduleWorkspaceLibrarySync();
   };
 
   updatePanel = function overrideUpdatePanel(panelId, updates, options = {}) {
@@ -523,6 +562,9 @@
   generatePlanButtonEl.addEventListener("click", handleGeneratePlan);
   regenerateSelectionButtonEl?.addEventListener("click", handleRegenerateSelectedPanels);
   importWorkspaceInputEl?.addEventListener("change", handleImportWorkspaceInputChange);
+  createWorkspaceButtonEl?.addEventListener("click", handleCreateWorkspace);
+  duplicateWorkspaceButtonEl?.addEventListener("click", handleDuplicateWorkspace);
+  workspaceLibraryListEl?.addEventListener("click", handleWorkspaceLibraryClick);
   togglePreviewButtonEl?.addEventListener("click", () => {
     setSidebarSections("right", activeRightSidebarSections.length > 0 ? [] : ["video"], false);
   });
@@ -532,6 +574,8 @@
 
   window.ShonodeWorkspaceBridge = {
     ...(window.ShonodeWorkspaceBridge || {}),
+    createSnapshot: createWorkspaceExportSnapshot,
+    closePanels: closeSidebarPanels,
     exportWorkspace: handleExportWorkspace,
     importWorkspace: importWorkspaceSnapshot,
     regenerateSelected: handleRegenerateSelectedPanels
@@ -544,6 +588,7 @@
   applySidebarRailState(false);
   syncConnectionLayer();
   renderPanels({ restoreView: true });
+  initializeWorkspaceLibrary();
 
   function bindProjectField(element, fieldName) {
     if (!element) {
@@ -566,6 +611,460 @@
 
     element.addEventListener("blur", () => {
       releaseHistoryGroup(historyKey);
+    });
+  }
+
+  function loadWorkspaceLibraryItems() {
+    const raw = window.localStorage.getItem(WORKSPACE_LIBRARY_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return sortWorkspaceLibraryItems(
+        parsed
+          .map(normalizeWorkspaceLibraryItem)
+          .filter(Boolean)
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  function normalizeWorkspaceLibraryItem(item) {
+    if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.id.trim()) {
+      return null;
+    }
+
+    const createdAt = normalizeWorkspaceTimestamp(item.createdAt);
+    const updatedAt = normalizeWorkspaceTimestamp(item.updatedAt, createdAt);
+
+    return {
+      id: item.id,
+      title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : "새 프로젝트",
+      sequence: typeof item.sequence === "string" ? item.sequence : "",
+      aspectRatio: typeof item.aspectRatio === "string" ? item.aspectRatio : "",
+      panelCount: Number.isFinite(item.panelCount) ? Math.max(0, Math.round(item.panelCount)) : 0,
+      createdAt,
+      updatedAt
+    };
+  }
+
+  function normalizeWorkspaceTimestamp(value, fallback = "") {
+    const timestamp = typeof value === "string" ? value : "";
+    const parsed = Date.parse(timestamp);
+    if (Number.isNaN(parsed)) {
+      return fallback || new Date().toISOString();
+    }
+
+    return new Date(parsed).toISOString();
+  }
+
+  function sortWorkspaceLibraryItems(items) {
+    return [...items].sort((left, right) => {
+      return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    });
+  }
+
+  function persistWorkspaceLibraryItems() {
+    workspaceLibraryItems = sortWorkspaceLibraryItems(workspaceLibraryItems);
+    window.localStorage.setItem(WORKSPACE_LIBRARY_STORAGE_KEY, JSON.stringify(workspaceLibraryItems));
+  }
+
+  function loadActiveWorkspaceId() {
+    const raw = window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+    return typeof raw === "string" ? raw.trim() : "";
+  }
+
+  function persistActiveWorkspaceId() {
+    if (!activeWorkspaceId) {
+      window.localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, activeWorkspaceId);
+  }
+
+  function openWorkspaceLibraryDb() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error("IndexedDB is not available."));
+        return;
+      }
+
+      const request = window.indexedDB.open(WORKSPACE_LIBRARY_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(WORKSPACE_LIBRARY_DB_STORE_NAME)) {
+          database.createObjectStore(WORKSPACE_LIBRARY_DB_STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Failed to open workspace library IndexedDB."));
+    });
+  }
+
+  async function loadWorkspaceSnapshotFromDb(workspaceId) {
+    if (!workspaceId) {
+      return null;
+    }
+
+    try {
+      const database = await openWorkspaceLibraryDb();
+      const result = await new Promise((resolve, reject) => {
+        const transaction = database.transaction(WORKSPACE_LIBRARY_DB_STORE_NAME, "readonly");
+        const store = transaction.objectStore(WORKSPACE_LIBRARY_DB_STORE_NAME);
+        const request = store.get(workspaceId);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Failed to read workspace snapshot."));
+      });
+      database.close();
+
+      return result && typeof result === "object" ? result : null;
+    } catch (error) {
+      console.warn("Failed to load workspace snapshot.", error);
+      return null;
+    }
+  }
+
+  async function saveWorkspaceSnapshotToDb(workspaceId, snapshot) {
+    const database = await openWorkspaceLibraryDb();
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(WORKSPACE_LIBRARY_DB_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(WORKSPACE_LIBRARY_DB_STORE_NAME);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("Failed to save workspace snapshot."));
+      store.put(snapshot, workspaceId);
+    });
+    database.close();
+  }
+
+  async function deleteWorkspaceSnapshotFromDb(workspaceId) {
+    const database = await openWorkspaceLibraryDb();
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(WORKSPACE_LIBRARY_DB_STORE_NAME, "readwrite");
+      const store = transaction.objectStore(WORKSPACE_LIBRARY_DB_STORE_NAME);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("Failed to delete workspace snapshot."));
+      store.delete(workspaceId);
+    });
+    database.close();
+  }
+
+  function buildWorkspaceLibraryItem(workspaceId, snapshot, existingItem = null) {
+    return normalizeWorkspaceLibraryItem({
+      id: workspaceId,
+      title: snapshot?.project?.title,
+      sequence: snapshot?.project?.sequence,
+      aspectRatio: snapshot?.project?.aspectRatio,
+      panelCount: Array.isArray(snapshot?.panels) ? snapshot.panels.length : 0,
+      createdAt: existingItem?.createdAt,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  function upsertWorkspaceLibraryItem(nextItem) {
+    workspaceLibraryItems = sortWorkspaceLibraryItems([
+      ...workspaceLibraryItems.filter((item) => item.id !== nextItem.id),
+      nextItem
+    ]);
+    persistWorkspaceLibraryItems();
+  }
+
+  function buildEmptyWorkspaceSnapshot() {
+    return {
+      version: "shonode-workspace-v1",
+      exportedAt: new Date().toISOString(),
+      project: normalizeProject({
+        ...getDefaultProject(),
+        title: "새 프로젝트"
+      }),
+      panels: createDefaultPanels().map((panel, index) => normalizePanel(panel, index)),
+      referenceImages: [],
+      selection: {
+        panelIds: []
+      },
+      view: {
+        zoom: 1,
+        scrollLeft: 0,
+        scrollTop: 0
+      },
+      sidebar: {
+        leftSections: ["project"],
+        rightSections: [],
+        leftRailCollapsed: false,
+        rightRailCollapsed: false
+      }
+    };
+  }
+
+  function buildDuplicatedWorkspaceTitle(title) {
+    const baseTitle = typeof title === "string" && title.trim() ? title.trim() : "새 프로젝트";
+    return /복사본$/.test(baseTitle) ? `${baseTitle} 2` : `${baseTitle} 복사본`;
+  }
+
+  function formatWorkspaceUpdatedAt(value) {
+    const parsed = Date.parse(value);
+    if (Number.isNaN(parsed)) {
+      return "방금 전";
+    }
+
+    return new Intl.DateTimeFormat("ko-KR", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date(parsed));
+  }
+
+  function renderWorkspaceLibrary() {
+    if (!workspaceLibraryListEl || !workspaceLibraryMetaEl) {
+      return;
+    }
+
+    const itemCount = workspaceLibraryItems.length;
+    workspaceLibraryMetaEl.textContent = itemCount > 0
+      ? `총 ${itemCount}개 프로젝트 · 현재 작업은 자동 저장됩니다.`
+      : "현재 작업은 자동 저장됩니다.";
+
+    if (itemCount === 0) {
+      workspaceLibraryListEl.innerHTML = '<div class="workspace-library-empty">아직 저장된 프로젝트가 없습니다. 새 프로젝트를 만들거나 현재 작업을 복제해 시작해 보세요.</div>';
+      return;
+    }
+
+    workspaceLibraryListEl.innerHTML = workspaceLibraryItems.map((item) => {
+      const isActive = item.id === activeWorkspaceId;
+      const subtitleParts = [
+        item.sequence || "시퀀스 미정",
+        `${Math.max(1, item.panelCount)}컷`
+      ];
+
+      if (item.aspectRatio) {
+        subtitleParts.push(item.aspectRatio);
+      }
+
+      return `
+        <article class="workspace-library-item${isActive ? " is-active" : ""}">
+          <button class="workspace-library-open" type="button" data-workspace-open="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title)} 프로젝트 열기">
+            <span class="workspace-library-title-row">
+              <strong class="workspace-library-title">${escapeHtml(item.title)}</strong>
+              ${isActive ? '<span class="workspace-library-badge">현재</span>' : ""}
+            </span>
+            <p class="workspace-library-subtitle">${escapeHtml(subtitleParts.join(" · "))}</p>
+            <p class="workspace-library-time">최근 저장 ${escapeHtml(formatWorkspaceUpdatedAt(item.updatedAt))}</p>
+          </button>
+          <button class="ghost-button workspace-library-delete" type="button" data-workspace-delete="${escapeHtml(item.id)}">삭제</button>
+        </article>
+      `;
+    }).join("");
+  }
+
+  function scheduleWorkspaceLibrarySync(options = {}) {
+    if (!workspaceLibraryInitialized || workspaceImportInFlight || !activeWorkspaceId) {
+      return;
+    }
+
+    const delay = Number.isFinite(options.delay) ? options.delay : 480;
+    window.clearTimeout(workspaceLibrarySyncTimeoutId);
+    workspaceLibrarySyncTimeoutId = window.setTimeout(() => {
+      void syncActiveWorkspaceRecord(options);
+    }, Math.max(0, delay));
+  }
+
+  async function syncActiveWorkspaceRecord(options = {}) {
+    if (!activeWorkspaceId) {
+      return false;
+    }
+
+    window.clearTimeout(workspaceLibrarySyncTimeoutId);
+    if (workspaceImportInFlight) {
+      return false;
+    }
+
+    const snapshot = createWorkspaceExportSnapshot();
+    const existingItem = workspaceLibraryItems.find((item) => item.id === activeWorkspaceId) ?? null;
+    const nextItem = buildWorkspaceLibraryItem(
+      activeWorkspaceId,
+      snapshot,
+      existingItem
+        ? {
+            ...existingItem,
+            createdAt: options.createdAt || existingItem.createdAt
+          }
+        : {
+            createdAt: options.createdAt || new Date().toISOString()
+          }
+    );
+
+    workspaceLibrarySyncPromise = workspaceLibrarySyncPromise
+      .catch(() => undefined)
+      .then(async () => {
+        await saveWorkspaceSnapshotToDb(activeWorkspaceId, snapshot);
+        upsertWorkspaceLibraryItem(nextItem);
+        persistActiveWorkspaceId();
+        renderWorkspaceLibrary();
+      })
+      .catch((error) => {
+        console.warn("Failed to sync workspace library.", error);
+        setStatus("프로젝트 라이브러리를 저장하지 못했습니다.", "warning");
+      });
+
+    await workspaceLibrarySyncPromise;
+    return true;
+  }
+
+  async function initializeWorkspaceLibrary() {
+    if (workspaceLibraryInitialized) {
+      return;
+    }
+
+    workspaceLibraryInitialized = true;
+    if (!activeWorkspaceId) {
+      activeWorkspaceId = createId();
+      persistActiveWorkspaceId();
+    }
+
+    renderWorkspaceLibrary();
+
+    const existingSnapshot = await loadWorkspaceSnapshotFromDb(activeWorkspaceId);
+    if (!existingSnapshot && !workspaceLibraryItems.some((item) => item.id === activeWorkspaceId)) {
+      await syncActiveWorkspaceRecord({ createdAt: new Date().toISOString() });
+      return;
+    }
+
+    await syncActiveWorkspaceRecord({
+      createdAt: workspaceLibraryItems.find((item) => item.id === activeWorkspaceId)?.createdAt
+    });
+  }
+
+  async function activateWorkspaceSnapshot(workspaceId, snapshot, options = {}) {
+    workspaceImportInFlight = true;
+    activeWorkspaceId = workspaceId;
+    persistActiveWorkspaceId();
+
+    try {
+      await importWorkspaceSnapshot(snapshot);
+    } finally {
+      workspaceImportInFlight = false;
+    }
+
+    await syncActiveWorkspaceRecord({ createdAt: options.createdAt });
+    renderWorkspaceLibrary();
+
+    if (options.statusMessage) {
+      setStatus(options.statusMessage);
+    }
+  }
+
+  async function activateWorkspaceById(workspaceId, options = {}) {
+    const targetItem = workspaceLibraryItems.find((item) => item.id === workspaceId);
+    if (!targetItem) {
+      setStatus("프로젝트 목록에서 대상을 찾지 못했습니다.", "warning");
+      return;
+    }
+
+    if (workspaceId === activeWorkspaceId && !options.forceReload) {
+      setStatus("이미 열려 있는 프로젝트입니다.");
+      return;
+    }
+
+    const snapshot = await loadWorkspaceSnapshotFromDb(workspaceId);
+    if (!snapshot) {
+      setStatus("프로젝트를 불러오지 못했습니다.", "warning");
+      return;
+    }
+
+    await activateWorkspaceSnapshot(workspaceId, snapshot, {
+      createdAt: targetItem.createdAt,
+      statusMessage: options.statusMessage || `${targetItem.title} 프로젝트를 불러왔습니다.`
+    });
+  }
+
+  async function handleCreateWorkspace() {
+    await syncActiveWorkspaceRecord();
+    const workspaceId = createId();
+    await activateWorkspaceSnapshot(workspaceId, buildEmptyWorkspaceSnapshot(), {
+      createdAt: new Date().toISOString(),
+      statusMessage: "새 프로젝트를 만들었습니다."
+    });
+  }
+
+  async function handleDuplicateWorkspace() {
+    await syncActiveWorkspaceRecord();
+    const snapshot = createWorkspaceExportSnapshot();
+    snapshot.project = normalizeProject({
+      ...snapshot.project,
+      title: buildDuplicatedWorkspaceTitle(snapshot.project?.title)
+    });
+
+    await activateWorkspaceSnapshot(createId(), snapshot, {
+      createdAt: new Date().toISOString(),
+      statusMessage: "현재 작업을 새 프로젝트로 복제했습니다."
+    });
+  }
+
+  async function handleWorkspaceLibraryClick(event) {
+    const deleteTarget = event.target.closest("[data-workspace-delete]");
+    if (deleteTarget) {
+      event.preventDefault();
+      await handleDeleteWorkspace(deleteTarget.dataset.workspaceDelete);
+      return;
+    }
+
+    const openTarget = event.target.closest("[data-workspace-open]");
+    if (!openTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    await activateWorkspaceById(openTarget.dataset.workspaceOpen);
+  }
+
+  async function handleDeleteWorkspace(workspaceId) {
+    const targetItem = workspaceLibraryItems.find((item) => item.id === workspaceId);
+    if (!targetItem) {
+      return;
+    }
+
+    const shouldDelete = await openConfirmDialog({
+      tone: "danger",
+      eyebrow: "프로젝트 삭제",
+      title: `${targetItem.title} 프로젝트를 삭제할까요?`,
+      description: "라이브러리 목록과 저장된 스냅샷에서 함께 제거됩니다.",
+      confirmLabel: "프로젝트 삭제"
+    });
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    await deleteWorkspaceSnapshotFromDb(workspaceId);
+    workspaceLibraryItems = workspaceLibraryItems.filter((item) => item.id !== workspaceId);
+    persistWorkspaceLibraryItems();
+
+    if (workspaceId !== activeWorkspaceId) {
+      renderWorkspaceLibrary();
+      setStatus(`${targetItem.title} 프로젝트를 삭제했습니다.`);
+      return;
+    }
+
+    if (workspaceLibraryItems.length === 0) {
+      await activateWorkspaceSnapshot(createId(), buildEmptyWorkspaceSnapshot(), {
+        createdAt: new Date().toISOString(),
+        statusMessage: "마지막 프로젝트를 삭제하고 새 프로젝트를 만들었습니다."
+      });
+      return;
+    }
+
+    renderWorkspaceLibrary();
+    await activateWorkspaceById(workspaceLibraryItems[0].id, {
+      forceReload: true,
+      statusMessage: `${targetItem.title} 프로젝트를 삭제하고 다른 프로젝트를 열었습니다.`
     });
   }
 
@@ -1017,6 +1516,7 @@
   function persistAiReferenceImages() {
     try {
       window.sessionStorage.setItem(AI_REFERENCE_IMAGES_STORAGE_KEY, JSON.stringify(aiReferenceImages));
+      scheduleWorkspaceLibrarySync();
       return true;
     } catch {
       setStatus("첨부 이미지가 많아서 모두 저장하지 못했습니다. 장수를 줄여주세요.", "warning");
@@ -1239,6 +1739,7 @@
   function persistSidebarSections(side, values) {
     const key = side === "left" ? LEFT_SIDEBAR_SECTION_STORAGE_KEY : RIGHT_SIDEBAR_SECTION_STORAGE_KEY;
     window.localStorage.setItem(key, JSON.stringify(values));
+    scheduleWorkspaceLibrarySync();
   }
 
   function loadRailCollapsed(side) {
@@ -1249,6 +1750,7 @@
   function persistRailCollapsed(side, value) {
     const key = side === "left" ? LEFT_RAIL_COLLAPSED_STORAGE_KEY : RIGHT_RAIL_COLLAPSED_STORAGE_KEY;
     window.localStorage.setItem(key, String(value));
+    scheduleWorkspaceLibrarySync();
   }
 
   function getRailElement(side) {
@@ -1351,7 +1853,8 @@
     }
   }
 
-  function closeSidebarPanels() {
+  function closeSidebarPanels(options = {}) {
+    const { announce = true } = options;
     const hadOpenPanel = activeLeftSidebarSections.length > 0 || activeRightSidebarSections.length > 0;
     activeLeftSidebarSections = [];
     activeRightSidebarSections = [];
@@ -1359,7 +1862,7 @@
     persistSidebarSections("right", []);
     applySidebarRailState(false);
 
-    if (hadOpenPanel) {
+    if (announce && hadOpenPanel) {
       setStatus("열린 사이드 패널을 닫았습니다.");
     }
   }

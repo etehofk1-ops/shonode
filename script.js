@@ -43,6 +43,7 @@ const exportWorkspaceButton = document.getElementById("exportWorkspaceButton");
 const importWorkspaceInput = document.getElementById("importWorkspaceInput");
 const saveWorkspaceButton = document.getElementById("saveWorkspaceButton");
 const saveWorkspaceLabel = document.getElementById("saveWorkspaceLabel");
+const homeButton = document.getElementById("homeButton");
 const toggleHeaderButton = document.getElementById("toggleHeaderButton");
 const toggleHeaderLabel = document.getElementById("toggleHeaderLabel");
 const toggleSidebarButton = document.getElementById("toggleSidebarButton");
@@ -182,6 +183,10 @@ zoomOutButton.addEventListener("click", () => {
 
 fitCanvasButton.addEventListener("click", () => {
   fitCanvasToView();
+});
+
+homeButton?.addEventListener("click", () => {
+  goToWorkspaceHome();
 });
 
 toggleHeaderButton?.addEventListener("click", () => {
@@ -1498,12 +1503,23 @@ function handleGlobalKeyDown(event) {
     }
   }
 
-  if (isEditableTarget(document.activeElement)) {
+  const key = event.key.toLowerCase();
+  const isCommand = event.metaKey || event.ctrlKey;
+
+  if (isCommand && key === "s") {
+    event.preventDefault();
+
+    if (event.shiftKey) {
+      void window.ShonodeWorkspaceBridge?.exportWorkspace?.();
+    } else {
+      saveWorkspace();
+    }
     return;
   }
 
-  const key = event.key.toLowerCase();
-  const isCommand = event.metaKey || event.ctrlKey;
+  if (isEditableTarget(document.activeElement)) {
+    return;
+  }
 
   if (isCommand && key === "z" && event.shiftKey) {
     event.preventDefault();
@@ -1529,6 +1545,13 @@ function handleGlobalKeyDown(event) {
     return;
   }
 
+  if (isCommand && key === "a" && panels.length > 0) {
+    event.preventDefault();
+    setSelection(panels.map((panel) => panel.id));
+    setStatus(`${panels.length}개 컷을 선택했습니다.`);
+    return;
+  }
+
   if (isCommand && (key === "=" || key === "+")) {
     event.preventDefault();
     stepZoom(1.12);
@@ -1545,6 +1568,36 @@ function handleGlobalKeyDown(event) {
     event.preventDefault();
     fitCanvasToView();
     return;
+  }
+
+  if (selectedPanelIds.size > 0 && key.startsWith("arrow")) {
+    event.preventDefault();
+    const step = event.shiftKey ? 40 : 10;
+    const [firstSelectedId] = selectedPanelIds;
+
+    if (!firstSelectedId) {
+      return;
+    }
+
+    if (key === "arrowleft") {
+      nudgeSelection(firstSelectedId, -step, 0);
+      return;
+    }
+
+    if (key === "arrowright") {
+      nudgeSelection(firstSelectedId, step, 0);
+      return;
+    }
+
+    if (key === "arrowup") {
+      nudgeSelection(firstSelectedId, 0, -step);
+      return;
+    }
+
+    if (key === "arrowdown") {
+      nudgeSelection(firstSelectedId, 0, step);
+      return;
+    }
   }
 
   if ((event.key === "Delete" || event.key === "Backspace") && selectedPanelIds.size > 0) {
@@ -1602,7 +1655,15 @@ function setZoom(nextZoom, anchor = {}) {
   scheduleViewStateSave();
 }
 
-function fitCanvasToView() {
+function goToWorkspaceHome() {
+  window.ShonodeWorkspaceBridge?.closePanels?.({ announce: false });
+  clearSelection();
+  fitCanvasToView({ announce: false });
+  setStatus("작업 홈으로 돌아왔습니다.");
+}
+
+function fitCanvasToView(options = {}) {
+  const { announce = true } = options;
   const bounds = getContentBounds();
   const viewportWidth = canvasViewport.clientWidth;
   const viewportHeight = canvasViewport.clientHeight;
@@ -1623,6 +1684,10 @@ function fitCanvasToView() {
     contentX: (bounds.minX + bounds.maxX) / 2,
     contentY: (bounds.minY + bounds.maxY) / 2
   });
+
+  if (!announce) {
+    return;
+  }
 
   setStatus("현재 배치에 맞게 화면을 조정했습니다.");
 }
