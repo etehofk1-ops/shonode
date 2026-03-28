@@ -66,6 +66,8 @@ const projectCheckShotFlow = document.getElementById("projectCheckShotFlow");
 const projectCheckCharacterArc = document.getElementById("projectCheckCharacterArc");
 const projectCheckArtDirection = document.getElementById("projectCheckArtDirection");
 const projectCheckSoundCue = document.getElementById("projectCheckSoundCue");
+const mobileUndoFab = document.getElementById("mobileUndoFab");
+const mobileRedoFab = document.getElementById("mobileRedoFab");
 const confirmDialog = document.getElementById("confirmDialog");
 const confirmDialogBackdrop = document.getElementById("confirmDialogBackdrop");
 const confirmDialogEyebrow = document.getElementById("confirmDialogEyebrow");
@@ -101,6 +103,8 @@ let confirmDialogLastActiveElement = null;
 let panelImageStoragePromise = null;
 let panelImagePersistPromise = Promise.resolve();
 let panelImagePersistFingerprint = "";
+let canvasPointers = new Map(); // touch pointers tracked on canvas
+let pinchState = null;
 
 const savedView = loadViewState();
 let zoom = clamp(savedView.zoom ?? 1, MIN_ZOOM, MAX_ZOOM);
@@ -152,6 +156,14 @@ undoButton.addEventListener("click", () => {
 });
 
 redoButton.addEventListener("click", () => {
+  redoHistory();
+});
+
+mobileUndoFab?.addEventListener("click", () => {
+  undoHistory();
+});
+
+mobileRedoFab?.addEventListener("click", () => {
   redoHistory();
 });
 
@@ -360,9 +372,13 @@ board?.addEventListener("click", async (event) => {
 }, { capture: true });
 
 canvasViewport.addEventListener("wheel", handleViewportWheel, { passive: false });
+canvasViewport.addEventListener("pointerdown", handlePinchDown, { capture: true });
 canvasViewport.addEventListener("pointerdown", handleViewportPointerDown);
 canvasViewport.addEventListener("scroll", scheduleViewStateSave, { passive: true });
 board.addEventListener("pointerdown", handleBoardPointerDown);
+window.addEventListener("pointermove", handlePinchMove, { capture: true, passive: false });
+window.addEventListener("pointerup", handlePinchUp, { capture: true });
+window.addEventListener("pointercancel", handlePinchUp, { capture: true });
 
 window.addEventListener("resize", () => {
   scheduleCanvasMetricsUpdate();
@@ -900,8 +916,12 @@ function pushHistoryState(snapshot = createHistorySnapshot()) {
 }
 
 function updateHistoryUI() {
-  undoButton.disabled = undoStack.length === 0;
-  redoButton.disabled = redoStack.length === 0;
+  const canUndo = undoStack.length > 0;
+  const canRedo = redoStack.length > 0;
+  undoButton.disabled = !canUndo;
+  redoButton.disabled = !canRedo;
+  if (mobileUndoFab) mobileUndoFab.disabled = !canUndo;
+  if (mobileRedoFab) mobileRedoFab.disabled = !canRedo;
 }
 
 function restoreHistorySnapshot(snapshot) {
@@ -1193,7 +1213,69 @@ function createPanelElement(panel, index) {
       setSelection([panel.id]);
     }
 
-    startCardDrag(event, panel.id);
+    if (event.pointerType !== "touch") {
+      startCardDrag(event, panel.id);
+      return;
+    }
+
+    // Touch: commit drag on long press (350ms) or when finger moves > 10px
+    let latestEvent = event;
+    let dragCommitted = false;
+
+    const commitDrag = () => {
+      if (dragCommitted) {
+        return;
+      }
+      dragCommitted = true;
+      cleanup();
+      startCardDrag(latestEvent, panel.id);
+      if (navigator.vibrate) {
+        navigator.vibrate(25);
+      }
+    };
+
+    const cleanup = () => {
+      clearTimeout(longPressTimer);
+      window.removeEventListener("pointermove", onEarlyMove);
+      window.removeEventListener("pointerup", onEarlyUp);
+      window.removeEventListener("pointercancel", onEarlyCancel);
+    };
+
+    const onEarlyMove = (moveEvent) => {
+      if (moveEvent.pointerId !== event.pointerId) {
+        return;
+      }
+      latestEvent = moveEvent;
+      const dx = moveEvent.clientX - event.clientX;
+      const dy = moveEvent.clientY - event.clientY;
+      if (Math.sqrt(dx * dx + dy * dy) > 10) {
+        commitDrag();
+      }
+    };
+
+    const onEarlyUp = (upEvent) => {
+      if (upEvent.pointerId !== event.pointerId) {
+        return;
+      }
+      if (!dragCommitted) {
+        cleanup();
+      }
+    };
+
+    const onEarlyCancel = (cancelEvent) => {
+      if (cancelEvent.pointerId !== event.pointerId) {
+        return;
+      }
+      if (!dragCommitted) {
+        cleanup();
+      }
+    };
+
+    const longPressTimer = setTimeout(commitDrag, 350);
+
+    window.addEventListener("pointermove", onEarlyMove);
+    window.addEventListener("pointerup", onEarlyUp);
+    window.addEventListener("pointercancel", onEarlyCancel);
   });
 
   handle.addEventListener("keydown", (event) => {
@@ -1443,11 +1525,16 @@ function handleBoardPointerDown(event) {
 }
 
 function shouldStartPan(event) {
-  if (panState || dragState) {
+  if (panState || dragState || pinchState) {
     return false;
   }
 
   if (event.button === 1) {
+    return true;
+  }
+
+  // Single touch on empty canvas area → pan
+  if (event.pointerType === "touch" && canvasPointers.size === 1 && !event.target.closest(".story-card")) {
     return true;
   }
 
@@ -1500,6 +1587,110 @@ function handlePanEnd(event) {
   window.removeEventListener("pointermove", handlePanMove);
   window.removeEventListener("pointerup", handlePanEnd);
   window.removeEventListener("pointercancel", handlePanEnd);
+}
+
+// ── Pinch zoom + two-finger pan ──────────────────────────────────────────────
+
+function getPinchMidAndDistance(pointers) {
+  const pts = Array.from(pointers.values());
+  const midX = (pts[0].clientX + pts[1].clientX) / 2;
+  const midY = (pts[0].clientY + pts[1].clientY) / 2;
+  const dx = pts[0].clientX - pts[1].clientX;
+  const dy = pts[0].clientY - pts[1].clientY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return { midX, midY, distance };
+}
+
+function handlePinchDown(event) {
+  if (event.pointerType !== "touch") {
+    return;
+  }
+
+  canvasPointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+
+  if (canvasPointers.size !== 2) {
+    return;
+  }
+
+  // Second finger landed — cancel any existing single-touch pan or card drag
+  if (panState) {
+    panState = null;
+    document.body.classList.remove("is-panning");
+    window.removeEventListener("pointermove", handlePanMove);
+    window.removeEventListener("pointerup", handlePanEnd);
+    window.removeEventListener("pointercancel", handlePanEnd);
+  }
+
+  if (dragState) {
+    dragState.items.forEach((item) => item.card.classList.remove("is-dragging"));
+    dragState = null;
+    document.body.classList.remove("is-panning");
+    window.removeEventListener("pointermove", handleCardDragMove);
+    window.removeEventListener("pointerup", handleCardDragEnd);
+    window.removeEventListener("pointercancel", handleCardDragEnd);
+  }
+
+  const { midX, midY, distance } = getPinchMidAndDistance(canvasPointers);
+  const rect = canvasViewport.getBoundingClientRect();
+
+  pinchState = {
+    startDistance: distance,
+    startZoom: zoom,
+    startMidX: midX,
+    startMidY: midY,
+    anchorLocalX: midX - rect.left,
+    anchorLocalY: midY - rect.top,
+    startScrollLeft: canvasViewport.scrollLeft,
+    startScrollTop: canvasViewport.scrollTop
+  };
+}
+
+function handlePinchMove(event) {
+  if (!canvasPointers.has(event.pointerId)) {
+    return;
+  }
+
+  canvasPointers.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+
+  if (!pinchState || canvasPointers.size < 2) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const { midX, midY, distance } = getPinchMidAndDistance(canvasPointers);
+  const scale = distance / pinchState.startDistance;
+  const targetZoom = clamp(pinchState.startZoom * scale, MIN_ZOOM, MAX_ZOOM);
+
+  const deltaMidX = midX - pinchState.startMidX;
+  const deltaMidY = midY - pinchState.startMidY;
+
+  // Content point under the initial pinch midpoint
+  const contentX = (pinchState.startScrollLeft + pinchState.anchorLocalX) / pinchState.startZoom;
+  const contentY = (pinchState.startScrollTop + pinchState.anchorLocalY) / pinchState.startZoom;
+
+  zoom = targetZoom;
+  updateZoomUI();
+  updateCanvasMetrics();
+
+  canvasViewport.scrollLeft = contentX * targetZoom - pinchState.anchorLocalX - deltaMidX;
+  canvasViewport.scrollTop = contentY * targetZoom - pinchState.anchorLocalY - deltaMidY;
+
+  clampViewportScroll();
+  scheduleViewStateSave();
+}
+
+function handlePinchUp(event) {
+  if (!canvasPointers.has(event.pointerId)) {
+    return;
+  }
+
+  canvasPointers.delete(event.pointerId);
+
+  if (canvasPointers.size < 2) {
+    pinchState = null;
+  }
 }
 
 function handleGlobalKeyDown(event) {

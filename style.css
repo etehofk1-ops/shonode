@@ -2709,7 +2709,8 @@ button:disabled {
   }
 
   .canvas-toolbar {
-    top: 12px;
+    top: auto;
+    bottom: 12px;
     left: 12px;
     right: 12px;
     gap: 8px;
@@ -2732,7 +2733,7 @@ button:disabled {
   }
 
   .canvas-viewport {
-    padding: 144px 16px 28px;
+    padding: 28px 16px 144px;
   }
 
   .workspace-stage {
@@ -2801,7 +2802,7 @@ button:disabled {
   }
 
   .canvas-viewport {
-    padding: 168px 12px 20px;
+    padding: 20px 12px 168px;
   }
 
   .sidebar-content {
@@ -2815,6 +2816,61 @@ button:disabled {
 
 .story-card {
   width: min(340px, calc(100vw - 56px));
+  }
+}
+
+/* Mobile floating action buttons */
+.mobile-fab-row {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .mobile-fab-row {
+    display: flex;
+    position: fixed;
+    bottom: 164px;
+    right: 16px;
+    z-index: 120;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .mobile-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.06);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: opacity 0.15s, transform 0.15s;
+    color: #1a2140;
+  }
+
+  .mobile-fab svg {
+    width: 20px;
+    height: 20px;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+  }
+
+  .mobile-fab:disabled {
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .mobile-fab:active:not(:disabled) {
+    transform: scale(0.92);
   }
 }
 
