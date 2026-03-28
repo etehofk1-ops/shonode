@@ -2646,98 +2646,83 @@ button:disabled {
   }
 
   .app-shell {
-    gap: 8px;
-    padding: 8px;
+    gap: 0;
+    padding: 0;
   }
 
+  /* ── Minimal header ── */
   .hero {
-    padding: 12px;
-    border-radius: 20px;
+    padding: 10px 14px;
+    border-radius: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-strong);
+    box-shadow: 0 1px 8px rgba(15, 23, 42, 0.06);
   }
 
   .hero-bar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0;
   }
 
-  .brand-home-button {
-    width: 100%;
-  }
-
+  /* Hide desktop action buttons on mobile */
   .action-row--minimal {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
+    display: none;
   }
 
-  .action-row--minimal .secondary-button,
-  .action-row--minimal .ghost-button,
-  .action-row--minimal .primary-button {
-    min-width: 0;
-    white-space: nowrap;
-  }
-
-  .action-row--minimal .save-workspace-button {
-    width: auto;
-    padding-inline: 16px;
+  /* Show mobile hamburger */
+  .mobile-menu-button {
+    display: flex;
   }
 
   .workspace-overlay {
     top: 0;
-    border-radius: 24px;
+    border-radius: 0;
   }
 
   .side-panel {
-    top: 8px;
-    bottom: 8px;
+    top: 0;
+    bottom: 0;
     width: var(--side-panel-width);
   }
 
   .side-panel--left {
-    left: 8px;
+    left: 0;
   }
 
   .side-panel--right {
-    right: 8px;
+    right: 0;
   }
 
   .side-panel--left .sidebar-shell,
   .side-panel--right .sidebar-shell {
-    border-radius: 24px;
-    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 0;
+    border: none;
+    border-right: 1px solid var(--border);
   }
 
+  .side-panel--right .sidebar-shell {
+    border-right: none;
+    border-left: 1px solid var(--border);
+  }
+
+  /* Hide sidebar rails on mobile (accessed via tab bar) */
+  .sidebar-rail {
+    display: none;
+  }
+
+  /* Canvas toolbar: hide on mobile (replaced by tab bar) */
   .canvas-toolbar {
-    top: auto;
-    bottom: 12px;
-    left: 12px;
-    right: 12px;
-    gap: 8px;
-  }
-
-  .canvas-tool-group {
-    flex-wrap: nowrap;
-    gap: 8px;
-    overflow-x: auto;
-    padding: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(16px);
-    scrollbar-width: none;
-  }
-
-  .canvas-tool-group::-webkit-scrollbar {
     display: none;
   }
 
   .canvas-viewport {
-    padding: 28px 16px 144px;
+    padding: 12px 12px 80px;
   }
 
   .workspace-stage {
-    border-radius: 24px;
+    border-radius: 0;
   }
 
   .workspace-library-actions {
@@ -3456,6 +3441,289 @@ body.is-list-mode .canvas-tool-group:has(#zoomInButton) {
   display: none;
 }
 
+/* ── Mobile hamburger button ─────────────────────────────────────────────── */
+
+.mobile-menu-button {
+  display: none; /* shown via media query */
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.9);
+  color: var(--text-main);
+  flex-shrink: 0;
+}
+
+.mobile-menu-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* ── Mobile drawer ───────────────────────────────────────────────────────── */
+
+.mobile-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--surface-strong);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.14);
+  transform: translateY(-100%);
+  transition: transform 0.26s cubic-bezier(0.32, 0, 0.15, 1);
+  border-radius: 0 0 20px 20px;
+}
+
+.mobile-drawer:not([hidden]) {
+  transform: translateY(0);
+}
+
+/* override `hidden` so transition works — use opacity trick via JS instead */
+.mobile-drawer[hidden] {
+  display: block !important;
+  pointer-events: none;
+}
+
+.mobile-drawer-inner {
+  padding: 12px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-drawer-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mobile-drawer-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0;
+}
+
+.mobile-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.mobile-drawer-item:hover,
+.mobile-drawer-item:active {
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.mobile-drawer-item--accent {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.mobile-drawer-item--accent:hover {
+  background: rgba(154, 169, 255, 0.2);
+}
+
+.mobile-drawer-item svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Mobile tab bar ──────────────────────────────────────────────────────── */
+
+.mobile-tab-bar {
+  display: none; /* shown on mobile via media query */
+}
+
+@media (max-width: 760px) {
+  .mobile-tab-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 150;
+    height: 64px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -2px 16px rgba(15, 23, 42, 0.07);
+  }
+}
+
+.mobile-tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 4px;
+  transition: color 0.12s, background 0.12s;
+  border-radius: 0;
+}
+
+.mobile-tab-item svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mobile-tab-item:active {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.mobile-tab-item.is-active {
+  color: var(--accent-strong);
+}
+
+.mobile-tab-item--primary {
+  color: var(--accent-strong);
+}
+
+.mobile-tab-item--primary svg {
+  width: 24px;
+  height: 24px;
+  background: var(--accent-strong);
+  color: white;
+  stroke: white;
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.mobile-tab-item:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* ── Compact card (list mode) ────────────────────────────────────────────── */
+
+body.is-list-mode .story-card.is-compact {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+body.is-list-mode .story-card.is-compact .card-header {
+  padding: 11px 14px;
+  margin: 0;
+}
+
+body.is-list-mode .story-card.is-compact .card-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* In compact, image-clear / vid-clear never visible */
+body.is-list-mode .story-card.is-compact .image-clear-button,
+body.is-list-mode .story-card.is-compact .vid-clear-button {
+  display: none;
+}
+
+body.is-list-mode .story-card.is-compact .media-stage,
+body.is-list-mode .story-card.is-compact .panel-flow-row,
+body.is-list-mode .story-card.is-compact .caption-field {
+  display: none;
+}
+
+body.is-list-mode .story-card.is-compact .panel-handle {
+  gap: 10px;
+}
+
+/* Compact: show thumbnail inline next to title */
+body.is-list-mode .story-card.is-compact .compact-thumb {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(154, 169, 255, 0.1);
+  border: 1px solid var(--border);
+}
+
+.compact-thumb {
+  display: none;
+}
+
+/* Expand chevron */
+body.is-list-mode .story-card.is-compact .compact-chevron {
+  display: flex;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-subtle);
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+}
+
+body.is-list-mode .story-card:not(.is-compact) .compact-chevron {
+  display: flex;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent-strong);
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(180deg);
+}
+
+.compact-chevron {
+  display: none;
+}
+
+.compact-chevron svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* Expanded card in list mode: add padding back */
+body.is-list-mode .story-card:not(.is-compact) {
+  padding: 14px;
+  gap: 12px;
+}
+
 /* Mobile floating action buttons */
 .mobile-fab-row {
   display: none;
@@ -3463,6 +3731,11 @@ body.is-list-mode .canvas-tool-group:has(#zoomInButton) {
 
 @media (max-width: 760px) {
   .mobile-fab-row {
+    display: none; /* replaced by tab bar */
+  }
+}
+@media (max-width: 760px) {
+  .mobile-fab-row-UNUSED {
     display: flex;
     position: fixed;
     bottom: 164px;

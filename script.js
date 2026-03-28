@@ -84,6 +84,19 @@ const timelineZoomInBtn = document.getElementById("timelineZoomIn");
 const timelineZoomOutBtn = document.getElementById("timelineZoomOut");
 const timelinePlayButton = document.getElementById("timelinePlayButton");
 const listViewButton = document.getElementById("listViewButton");
+const mobileMenuButton = document.getElementById("mobileMenuButton");
+const mobileDrawer = document.getElementById("mobileDrawer");
+const mobileDrawerSaveLabel = document.getElementById("mobileDrawerSaveLabel");
+const mobileTabBar = document.getElementById("mobileTabBar");
+const tabAddPanel = document.getElementById("tabAddPanel");
+const tabAI = document.getElementById("tabAI");
+const tabTimeline = document.getElementById("tabTimeline");
+const tabUndo = document.getElementById("tabUndo");
+const tabMore = document.getElementById("tabMore");
+const mobileImportButton = document.getElementById("mobileImportButton");
+const mobileExportButton = document.getElementById("mobileExportButton");
+const mobileSaveButton = document.getElementById("mobileSaveButton");
+const mobileCanvasViewButton = document.getElementById("mobileCanvasViewButton");
 const confirmDialog = document.getElementById("confirmDialog");
 const confirmDialogBackdrop = document.getElementById("confirmDialogBackdrop");
 const confirmDialogEyebrow = document.getElementById("confirmDialogEyebrow");
@@ -132,6 +145,8 @@ let isPlaying = false;
 let playheadRafId = null;
 let lastPlayTimestamp = null;
 let isListMode = false;
+let isDrawerOpen = false;
+let expandedPanelIds = new Set();
 
 const savedView = loadViewState();
 let zoom = clamp(savedView.zoom ?? 1, MIN_ZOOM, MAX_ZOOM);
@@ -162,20 +177,62 @@ if (MOBILE_HOME_MEDIA_QUERY.matches) {
 }
 
 listViewButton?.addEventListener("click", () => {
-  if (isListMode) {
-    disableListMode();
-  } else {
-    enableListMode();
-  }
+  if (isListMode) disableListMode(); else enableListMode();
 });
 
 MOBILE_HOME_MEDIA_QUERY.addEventListener("change", (e) => {
-  if (!e.matches && isListMode) {
-    disableListMode();
+  if (!e.matches && isListMode) disableListMode();
+  if (e.matches && !isListMode) enableListMode(false);
+});
+
+// ── Mobile drawer ──────────────────────────────────────────────────────────
+mobileMenuButton?.addEventListener("click", () => toggleMobileDrawer());
+tabMore?.addEventListener("click", () => toggleMobileDrawer());
+
+mobileImportButton?.addEventListener("click", () => {
+  closeMobileDrawer();
+  importWorkspaceButton?.click();
+});
+
+mobileExportButton?.addEventListener("click", () => {
+  closeMobileDrawer();
+  exportWorkspaceButton?.click();
+});
+
+mobileSaveButton?.addEventListener("click", () => {
+  closeMobileDrawer();
+  saveWorkspaceButton?.click();
+});
+
+mobileCanvasViewButton?.addEventListener("click", () => {
+  closeMobileDrawer();
+  if (isListMode) disableListMode(); else enableListMode();
+});
+
+// Close drawer on overlay click
+document.addEventListener("pointerdown", (e) => {
+  if (isDrawerOpen && !mobileDrawer?.contains(e.target) && e.target !== mobileMenuButton && e.target !== tabMore) {
+    closeMobileDrawer();
   }
-  if (e.matches && !isListMode) {
-    enableListMode(false);
-  }
+}, { capture: false });
+
+// ── Tab bar ────────────────────────────────────────────────────────────────
+tabAddPanel?.addEventListener("click", () => {
+  addPanelButton?.click();
+});
+
+tabUndo?.addEventListener("click", () => {
+  undoHistory();
+});
+
+tabTimeline?.addEventListener("click", () => {
+  toggleEditBar();
+  tabTimeline.classList.toggle("is-active", editBarOpen);
+});
+
+tabAI?.addEventListener("click", () => {
+  // Trigger AI director sidebar (left rail)
+  document.querySelector('.sidebar-rail-button[data-sidebar-target="ai"]')?.click();
 });
 
 syncSaveButtonIdleLabel();
@@ -948,6 +1005,7 @@ function syncSaveButtonIdleLabel() {
   saveWorkspaceLabel.textContent = SAVE_BUTTON_IDLE_LABEL;
   saveWorkspaceButton?.setAttribute("aria-label", "로컬 저장");
   saveWorkspaceButton?.setAttribute("title", "브라우저에 즉시 저장");
+  if (mobileDrawerSaveLabel) mobileDrawerSaveLabel.textContent = SAVE_BUTTON_IDLE_LABEL;
 }
 
 function saveWorkspace(options = {}) {
@@ -1018,6 +1076,7 @@ function updateHistoryUI() {
   redoButton.disabled = !canRedo;
   if (mobileUndoFab) mobileUndoFab.disabled = !canUndo;
   if (mobileRedoFab) mobileRedoFab.disabled = !canRedo;
+  if (tabUndo) tabUndo.disabled = !canUndo;
   updateTimelineDurationLabel();
   maybeRefreshEditTimeline();
 }
@@ -1114,6 +1173,7 @@ function renderPanels(options = {}) {
     board.appendChild(createPanelElement(panel, index));
   });
 
+  if (isListMode) applyCompactCards();
   syncSelectionUI();
   scheduleCanvasMetricsUpdate(Boolean(options.restoreView));
 }
@@ -1281,6 +1341,27 @@ function createPanelElement(panel, index) {
     imageName.textContent = panel.fileName;
     imageName.hidden = false;
   }
+
+  // Compact thumb + chevron for list mode
+  const thumbImg = document.createElement("img");
+  thumbImg.className = "compact-thumb";
+  thumbImg.alt = "";
+  if (panel.image) thumbImg.src = panel.image;
+  else thumbImg.hidden = !panel.image;
+
+  const chevron = document.createElement("span");
+  chevron.className = "compact-chevron";
+  chevron.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9L12 15L18 9"></path></svg>`;
+
+  handle.appendChild(thumbImg);
+  handle.appendChild(chevron);
+
+  // In list mode: tap card-header to expand/collapse
+  handle.addEventListener("click", (e) => {
+    if (!isListMode) return;
+    if (e.target.closest("button")) return; // don't intercept button clicks
+    toggleCardExpand(panel.id);
+  });
 
   card.addEventListener("pointerdown", (event) => {
     if (spacePressed || event.button !== 0 || shouldIgnoreCardSelection(event.target)) {
@@ -2364,7 +2445,37 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-// ── List Mode ────────────────────────────────────────────────────────────────
+// ── Mobile Drawer ─────────────────────────────────────────────────────────────
+
+function openMobileDrawer() {
+  if (!mobileDrawer) return;
+  isDrawerOpen = true;
+  mobileDrawer.hidden = false;
+  requestAnimationFrame(() => mobileDrawer.removeAttribute("hidden"));
+  mobileMenuButton?.setAttribute("aria-expanded", "true");
+  tabMore?.setAttribute("aria-expanded", "true");
+  syncDrawerSaveLabel();
+}
+
+function closeMobileDrawer() {
+  if (!mobileDrawer) return;
+  isDrawerOpen = false;
+  mobileDrawer.hidden = true;
+  mobileMenuButton?.setAttribute("aria-expanded", "false");
+  tabMore?.setAttribute("aria-expanded", "false");
+}
+
+function toggleMobileDrawer() {
+  if (isDrawerOpen) closeMobileDrawer(); else openMobileDrawer();
+}
+
+function syncDrawerSaveLabel() {
+  if (mobileDrawerSaveLabel && saveWorkspaceLabel) {
+    mobileDrawerSaveLabel.textContent = saveWorkspaceLabel.textContent;
+  }
+}
+
+// ── List Mode ─────────────────────────────────────────────────────────────────
 
 function enableListMode(animate = true) {
   isListMode = true;
@@ -2373,15 +2484,17 @@ function enableListMode(animate = true) {
     listViewButton.setAttribute("aria-pressed", "true");
     listViewButton.querySelector(".view-toggle-label").textContent = "캔버스";
   }
-  // Re-render in sorted order without zoom transform
-  renderPanels();
-  if (animate) {
-    setStatus("리스트 뷰로 전환했습니다.");
+  if (mobileCanvasViewButton) {
+    mobileCanvasViewButton.querySelector("span") && (mobileCanvasViewButton.lastChild.textContent = " 캔버스 뷰로 전환");
   }
+  renderPanels();
+  applyCompactCards();
+  if (animate) setStatus("리스트 뷰로 전환했습니다.");
 }
 
 function disableListMode() {
   isListMode = false;
+  expandedPanelIds.clear();
   document.body.classList.remove("is-list-mode");
   if (listViewButton) {
     listViewButton.setAttribute("aria-pressed", "false");
@@ -2389,6 +2502,28 @@ function disableListMode() {
   }
   renderPanels();
   setStatus("캔버스 뷰로 전환했습니다.");
+}
+
+function applyCompactCards() {
+  if (!isListMode) return;
+  board.querySelectorAll(".story-card").forEach((card) => {
+    const panelId = card.dataset.panelId;
+    if (!panelId) return;
+    if (expandedPanelIds.has(panelId)) {
+      card.classList.remove("is-compact");
+    } else {
+      card.classList.add("is-compact");
+    }
+  });
+}
+
+function toggleCardExpand(panelId) {
+  if (expandedPanelIds.has(panelId)) {
+    expandedPanelIds.delete(panelId);
+  } else {
+    expandedPanelIds.add(panelId);
+  }
+  applyCompactCards();
 }
 
 // ── Edit Bar ────────────────────────────────────────────────────────────────
