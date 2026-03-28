@@ -376,6 +376,14 @@
             <div class="edit-bar-sep" aria-hidden="true"></div>
             <span id="editTotalDuration" class="edit-duration-label">총 0초</span>
             <div class="edit-bar-spacer" aria-hidden="true"></div>
+            <button id="timelinePlayButton" class="edit-bar-play-btn" type="button" aria-label="재생">
+              <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 5.5L19 12L8 18.5V5.5Z"></path>
+              </svg>
+              <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true" hidden>
+                <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
+              </svg>
+            </button>
             <div class="edit-bar-zoom">
               <button id="timelineZoomOut" class="edit-bar-zoom-btn" type="button" aria-label="타임라인 축소">−</button>
               <button id="timelineZoomIn" class="edit-bar-zoom-btn" type="button" aria-label="타임라인 확대">+</button>
@@ -533,6 +541,7 @@
 
         <div class="card-actions">
           <button class="subtle-button image-clear-button" type="button">이미지 지우기</button>
+          <button class="subtle-button vid-clear-button" type="button" hidden>영상 지우기</button>
 
           <button class="icon-button duplicate-panel-button" type="button" aria-label="컷 복제" title="컷 복제">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -556,6 +565,7 @@
             <span class="media-view-button-label" data-view-label="t2i">T2I</span>
           </button>
           <button class="media-view-button" type="button" data-view="i2v">I2V</button>
+          <button class="media-view-button" type="button" data-view="vid">VID</button>
         </div>
 
         <label class="dropzone media-panel" data-panel-view="image" tabindex="0">
@@ -632,6 +642,20 @@
             </label>
           </div>
           <p class="prompt-collapsed-preview" hidden></p>
+        </section>
+
+        <section class="vid-panel media-panel" data-panel-view="vid" hidden>
+          <label class="vid-upload-area dropzone" tabindex="0" aria-label="영상 파일 업로드">
+            <input class="vid-file-input" type="file" accept="video/*" hidden>
+            <div class="dropzone-placeholder">
+              <p class="dropzone-title">영상 업로드</p>
+              <p class="dropzone-subtitle">MP4 · WebM · 드래그 앤 드롭 또는 클릭</p>
+            </div>
+          </label>
+          <div class="vid-preview-wrap" hidden>
+            <video class="vid-preview" controls playsinline></video>
+            <span class="vid-name"></span>
+          </div>
         </section>
       </div>
 

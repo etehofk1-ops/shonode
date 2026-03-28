@@ -2971,6 +2971,104 @@ button:disabled {
   color: var(--text-main);
 }
 
+.edit-bar-play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.edit-bar-play-btn:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-main);
+}
+
+.edit-bar-play-btn.is-playing {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+
+.edit-bar-play-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: none;
+}
+
+/* ── Video Panel ─────────────────────────────────────────────────────────── */
+
+.vid-panel {
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vid-upload-area {
+  min-height: 140px;
+  border-radius: 18px;
+  border: 2px dashed var(--border);
+  background: rgba(248, 251, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.vid-upload-area:hover,
+.vid-upload-area:focus-visible {
+  border-color: rgba(37, 99, 235, 0.44);
+  background: rgba(239, 246, 255, 0.9);
+  outline: none;
+}
+
+.vid-upload-area.is-dragover {
+  border-color: var(--accent-strong);
+  background: rgba(219, 234, 254, 0.7);
+}
+
+.vid-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vid-preview {
+  width: 100%;
+  border-radius: 14px;
+  background: #000;
+  display: block;
+  max-height: 300px;
+}
+
+.vid-name {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── NLE Timeline ───────────────────────────────────────────────────────────── */
 
 .timeline-workspace {
@@ -3134,6 +3232,23 @@ button:disabled {
   opacity: 0.42;
   cursor: grabbing;
   z-index: 5;
+}
+
+.timeline-clip.is-playing {
+  border-color: #f59e0b;
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.18), rgba(254, 215, 100, 0.1));
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.22);
+}
+
+.timeline-clip.has-video .timeline-clip-content::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+  margin-right: 5px;
 }
 
 .timeline-clip-thumb {

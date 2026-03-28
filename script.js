@@ -7,6 +7,8 @@ const SIDEBAR_STORAGE_KEY = "shotboard-sidebar-collapsed";
 const PANEL_IMAGE_DB_NAME = "shonode-panel-image-db-v1";
 const PANEL_IMAGE_DB_STORE_NAME = "panel-images";
 const PANEL_IMAGE_DB_RECORD_KEY = "workspace-panels";
+const PANEL_VIDEO_DB_NAME = "shonode-panel-video-db-v1";
+const PANEL_VIDEO_DB_STORE_NAME = "panel-videos";
 
 const DEFAULT_PANEL_COUNT = 6;
 const HISTORY_LIMIT = 80;
@@ -80,6 +82,7 @@ const timelinePlayheadEl = document.getElementById("timelinePlayhead");
 const timelineTimecodeEl = document.getElementById("timelineTimecode");
 const timelineZoomInBtn = document.getElementById("timelineZoomIn");
 const timelineZoomOutBtn = document.getElementById("timelineZoomOut");
+const timelinePlayButton = document.getElementById("timelinePlayButton");
 const confirmDialog = document.getElementById("confirmDialog");
 const confirmDialogBackdrop = document.getElementById("confirmDialogBackdrop");
 const confirmDialogEyebrow = document.getElementById("confirmDialogEyebrow");
@@ -122,6 +125,11 @@ let timelineScale = 80; // px per second
 let playheadTimeSec = 0;
 let timelineClipDragState = null;
 let timelineResizeDragState = null;
+let panelVideoBlobUrls = new Map(); // panelId → object URL
+let panelVideoStoragePromise = null;
+let isPlaying = false;
+let playheadRafId = null;
+let lastPlayTimestamp = null;
 
 const savedView = loadViewState();
 let zoom = clamp(savedView.zoom ?? 1, MIN_ZOOM, MAX_ZOOM);
@@ -143,6 +151,8 @@ window.ShonodePanelImageStorage = {
   ready: initializePanelImageStorage,
   flush: flushPanelImagePersistence
 };
+
+initializePanelVideoStorage();
 
 syncSaveButtonIdleLabel();
 
@@ -192,6 +202,14 @@ editBar.querySelectorAll(".edit-bar-tab").forEach((tab) => {
       openEditBar();
     }
   });
+});
+
+timelinePlayButton?.addEventListener("click", () => {
+  if (isPlaying) {
+    stopTimelinePlayback();
+  } else {
+    startTimelinePlayback();
+  }
 });
 
 timelineZoomInBtn?.addEventListener("click", () => {
@@ -2328,6 +2346,7 @@ function openEditBar() {
 }
 
 function closeEditBar() {
+  stopTimelinePlayback();
   editBarOpen = false;
   editBar.classList.remove("is-open");
   editBarContent.hidden = true;
@@ -2499,6 +2518,10 @@ function renderTimelineClips(clips) {
       clip.classList.add("is-selected");
     }
 
+    if (panelVideoBlobUrls.has(panel.id)) {
+      clip.classList.add("has-video");
+    }
+
     if (panel.image) {
       const img = document.createElement("img");
       img.className = "timeline-clip-thumb";
@@ -2649,6 +2672,209 @@ function maybeRefreshEditTimeline() {
   if (editBarOpen) {
     renderTimeline();
   }
+}
+
+// ── Video Storage ──────────────────────────────────────────────────────────
+
+function openPanelVideoDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB is not available."));
+      return;
+    }
+    const request = window.indexedDB.open(PANEL_VIDEO_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(PANEL_VIDEO_DB_STORE_NAME)) {
+        db.createObjectStore(PANEL_VIDEO_DB_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Failed to open video DB."));
+  });
+}
+
+async function loadAllPanelVideosFromIndexedDb() {
+  try {
+    const db = await openPanelVideoDb();
+    const map = await new Promise((resolve, reject) => {
+      const result = new Map();
+      const tx = db.transaction(PANEL_VIDEO_DB_STORE_NAME, "readonly");
+      const store = tx.objectStore(PANEL_VIDEO_DB_STORE_NAME);
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          if (cursor.value?.blob instanceof Blob) {
+            result.set(String(cursor.key), cursor.value);
+          }
+          cursor.continue();
+        } else {
+          resolve(result);
+        }
+      };
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return map;
+  } catch (err) {
+    console.warn("Failed to load panel videos from IndexedDB.", err);
+    return new Map();
+  }
+}
+
+async function savePanelVideoToIndexedDb(panelId, blob, fileName) {
+  const db = await openPanelVideoDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(PANEL_VIDEO_DB_STORE_NAME, "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.objectStore(PANEL_VIDEO_DB_STORE_NAME).put({ blob, fileName }, panelId);
+  });
+  db.close();
+}
+
+async function deletePanelVideoFromIndexedDb(panelId) {
+  try {
+    const db = await openPanelVideoDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(PANEL_VIDEO_DB_STORE_NAME, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.objectStore(PANEL_VIDEO_DB_STORE_NAME).delete(panelId);
+    });
+    db.close();
+  } catch (err) {
+    console.warn("Failed to delete panel video from IndexedDB.", err);
+  }
+}
+
+function initializePanelVideoStorage() {
+  if (panelVideoStoragePromise) {
+    return panelVideoStoragePromise;
+  }
+  panelVideoStoragePromise = loadAllPanelVideosFromIndexedDb().then((videoMap) => {
+    panelVideoBlobUrls.forEach((url) => URL.revokeObjectURL(url));
+    panelVideoBlobUrls = new Map();
+    videoMap.forEach(({ blob }, panelId) => {
+      panelVideoBlobUrls.set(panelId, URL.createObjectURL(blob));
+    });
+    if (panelVideoBlobUrls.size > 0) {
+      renderPanels();
+    }
+  }).catch((err) => {
+    console.warn("Failed to initialize panel video storage.", err);
+  });
+  return panelVideoStoragePromise;
+}
+
+async function attachVideoToPanel(panelId, fileList) {
+  const file = fileList?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("video/")) {
+    setStatus("영상 파일만 넣을 수 있어요.", "warning");
+    return;
+  }
+  try {
+    const oldUrl = panelVideoBlobUrls.get(panelId);
+    if (oldUrl) URL.revokeObjectURL(oldUrl);
+    const newUrl = URL.createObjectURL(file);
+    panelVideoBlobUrls.set(panelId, newUrl);
+    await savePanelVideoToIndexedDb(panelId, file, file.name);
+    pushHistoryState();
+    updatePanel(panelId, { videoFileName: file.name });
+    updateHistoryUI();
+    setStatus("영상을 반영했습니다.");
+  } catch (err) {
+    setStatus("영상을 불러오는 중 문제가 생겼습니다.", "warning");
+  }
+}
+
+async function clearVideoFromPanel(panelId) {
+  const url = panelVideoBlobUrls.get(panelId);
+  if (url) {
+    URL.revokeObjectURL(url);
+    panelVideoBlobUrls.delete(panelId);
+  }
+  await deletePanelVideoFromIndexedDb(panelId);
+  pushHistoryState();
+  updatePanel(panelId, { videoFileName: "" });
+  updateHistoryUI();
+  setStatus("영상을 지웠습니다.");
+}
+
+// ── Timeline Playback ──────────────────────────────────────────────────────
+
+function startTimelinePlayback() {
+  if (!editBarOpen) openEditBar();
+  isPlaying = true;
+  lastPlayTimestamp = null;
+  if (timelinePlayButton) {
+    timelinePlayButton.querySelector(".play-icon").hidden = true;
+    timelinePlayButton.querySelector(".stop-icon").hidden = false;
+    timelinePlayButton.classList.add("is-playing");
+  }
+  playheadRafId = requestAnimationFrame(tickPlayback);
+}
+
+function stopTimelinePlayback() {
+  if (!isPlaying) return;
+  isPlaying = false;
+  if (playheadRafId != null) {
+    cancelAnimationFrame(playheadRafId);
+    playheadRafId = null;
+  }
+  lastPlayTimestamp = null;
+  if (timelinePlayButton) {
+    timelinePlayButton.querySelector(".play-icon").hidden = false;
+    timelinePlayButton.querySelector(".stop-icon").hidden = true;
+    timelinePlayButton.classList.remove("is-playing");
+  }
+  timelineTrackLane?.querySelectorAll(".timeline-clip.is-playing").forEach((el) => {
+    el.classList.remove("is-playing");
+  });
+}
+
+function tickPlayback(timestamp) {
+  if (!isPlaying) return;
+  if (lastPlayTimestamp == null) lastPlayTimestamp = timestamp;
+  const delta = (timestamp - lastPlayTimestamp) / 1000;
+  lastPlayTimestamp = timestamp;
+
+  const clips = getOrderedPanelsWithTimes();
+  const totalSec = clips.reduce((sum, c) => sum + c.duration, 0);
+
+  if (totalSec <= 0) {
+    stopTimelinePlayback();
+    return;
+  }
+
+  playheadTimeSec += delta;
+  if (playheadTimeSec >= totalSec) {
+    playheadTimeSec = 0;
+  }
+
+  updatePlayheadPosition();
+
+  const currentClip = clips.find(
+    (c) => playheadTimeSec >= c.startTime && playheadTimeSec < c.startTime + c.duration
+  );
+
+  timelineTrackLane?.querySelectorAll(".timeline-clip").forEach((clipEl) => {
+    const active = currentClip?.panel.id === clipEl.dataset.panelId;
+    clipEl.classList.toggle("is-playing", active);
+
+    if (active) {
+      const vidUrl = panelVideoBlobUrls.get(clipEl.dataset.panelId);
+      const previewVideo = document.getElementById("previewVideo");
+      if (previewVideo && vidUrl && previewVideo.src !== vidUrl) {
+        previewVideo.src = vidUrl;
+        previewVideo.play().catch(() => {});
+      }
+    }
+  });
+
+  playheadRafId = requestAnimationFrame(tickPlayback);
 }
 
 

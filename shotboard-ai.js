@@ -164,6 +164,7 @@
       i2vMotionPrompt: "",
       i2vEndPrompt: "",
       nextPanelIds: [],
+      videoFileName: "",
       ...overrides
     });
   };
@@ -184,7 +185,7 @@
       ...base,
       sceneTitle: typeof panel?.sceneTitle === "string" ? panel.sceneTitle : "",
       durationLabel: typeof panel?.durationLabel === "string" ? panel.durationLabel : "",
-      viewMode: ["image", "t2i", "i2v"].includes(panel?.viewMode)
+      viewMode: ["image", "t2i", "i2v", "vid"].includes(panel?.viewMode)
         ? panel.viewMode
         : panel?.viewMode === "i2t"
           ? "t2i"
@@ -200,7 +201,8 @@
       i2vStartPrompt: typeof panel?.i2vStartPrompt === "string" ? panel.i2vStartPrompt : "",
       i2vMotionPrompt: typeof panel?.i2vMotionPrompt === "string" ? panel.i2vMotionPrompt : "",
       i2vEndPrompt: typeof panel?.i2vEndPrompt === "string" ? panel.i2vEndPrompt : "",
-      nextPanelIds: Array.isArray(panel?.nextPanelIds) ? panel.nextPanelIds.filter((value) => typeof value === "string") : []
+      nextPanelIds: Array.isArray(panel?.nextPanelIds) ? panel.nextPanelIds.filter((value) => typeof value === "string") : [],
+      videoFileName: typeof panel?.videoFileName === "string" ? panel.videoFileName : ""
     };
   };
 
@@ -286,7 +288,8 @@
           x: clamp(panel.x + NEW_PANEL_OFFSET, PANEL_MARGIN, Math.max(PANEL_MARGIN, canvasWidth - PANEL_WIDTH - PANEL_MARGIN)),
           y: clamp(panel.y + NEW_PANEL_OFFSET, PANEL_SAFE_TOP, Math.max(PANEL_SAFE_TOP, canvasHeight - 220)),
           z: zBase + index,
-          nextPanelIds: (panel.nextPanelIds ?? []).map((nextId) => idMap.get(nextId)).filter(Boolean)
+          nextPanelIds: (panel.nextPanelIds ?? []).map((nextId) => idMap.get(nextId)).filter(Boolean),
+          videoFileName: ""
         },
         baseLength + index
       )
@@ -311,6 +314,16 @@
     if (linkState && (deleteSet.has(linkState.sourceId) || deleteSet.has(linkState.targetId))) {
       cleanupLinkDrag(false);
     }
+
+    // Revoke video blob URLs and purge from IDB
+    ids.forEach((id) => {
+      const url = panelVideoBlobUrls.get(id);
+      if (url) {
+        URL.revokeObjectURL(url);
+        panelVideoBlobUrls.delete(id);
+        deletePanelVideoFromIndexedDb(id);
+      }
+    });
 
     pushHistoryState();
     const nextPanels = panels
@@ -342,6 +355,12 @@
     const nextCountEl = fragment.querySelector(".panel-next-count");
     const viewButtons = fragment.querySelectorAll(".media-view-button");
     const mediaPanels = fragment.querySelectorAll(".media-panel");
+    const vidUploadArea = fragment.querySelector(".vid-upload-area");
+    const vidFileInput = fragment.querySelector(".vid-file-input");
+    const vidPreviewWrap = fragment.querySelector(".vid-preview-wrap");
+    const vidPreview = fragment.querySelector(".vid-preview");
+    const vidNameEl = fragment.querySelector(".vid-name");
+    const vidClearButton = fragment.querySelector(".vid-clear-button");
     const t2iInput = fragment.querySelector(".t2i-prompt-input");
     const i2vStartInput = fragment.querySelector(".i2v-start-input");
     const i2vMotionInput = fragment.querySelector(".i2v-motion-input");
@@ -541,6 +560,50 @@
     bindPanelPromptInput(i2vStartInput, panel.id, "i2vStartPrompt", `panel-i2v-start:${panel.id}`);
     bindPanelPromptInput(i2vMotionInput, panel.id, "i2vMotionPrompt", `panel-i2v-motion:${panel.id}`);
     bindPanelPromptInput(i2vEndInput, panel.id, "i2vEndPrompt", `panel-i2v-end:${panel.id}`);
+
+    // Vid panel: hydrate state
+    const blobUrl = panelVideoBlobUrls.get(panel.id);
+    if (blobUrl && vidPreview && vidPreviewWrap && vidUploadArea) {
+      vidPreview.src = blobUrl;
+      if (vidNameEl) {
+        vidNameEl.textContent = panel.videoFileName || "";
+      }
+      vidPreviewWrap.hidden = false;
+      vidUploadArea.hidden = true;
+      if (vidClearButton) vidClearButton.hidden = false;
+    }
+
+    // Vid file input
+    if (vidFileInput) {
+      vidFileInput.addEventListener("change", async () => {
+        await attachVideoToPanel(panel.id, vidFileInput.files);
+        vidFileInput.value = "";
+      });
+    }
+
+    // Vid upload area click (label handles it) + drag-drop
+    if (vidUploadArea) {
+      vidUploadArea.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        vidUploadArea.classList.add("is-dragover");
+      });
+      vidUploadArea.addEventListener("dragleave", (e) => {
+        if (e.currentTarget === e.target) vidUploadArea.classList.remove("is-dragover");
+      });
+      vidUploadArea.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        vidUploadArea.classList.remove("is-dragover");
+        await attachVideoToPanel(panel.id, e.dataTransfer?.files);
+      });
+    }
+
+    // Vid clear button
+    if (vidClearButton) {
+      vidClearButton.addEventListener("click", async () => {
+        await clearVideoFromPanel(panel.id);
+      });
+    }
 
     return fragment;
   };
