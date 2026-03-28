@@ -73,6 +73,11 @@ const confirmDialogTitle = document.getElementById("confirmDialogTitle");
 const confirmDialogDescription = document.getElementById("confirmDialogDescription");
 const confirmDialogCancel = document.getElementById("confirmDialogCancel");
 const confirmDialogConfirm = document.getElementById("confirmDialogConfirm");
+const SAVE_BUTTON_IDLE_LABEL = "로컬 저장";
+const SAVE_BUTTON_SUCCESS_LABEL = "로컬 저장됨";
+const SAVE_BUTTON_FAILURE_LABEL = "저장 실패";
+const NARROW_HOME_ZOOM = 0.82;
+const MOBILE_HOME_MEDIA_QUERY = window.matchMedia("(max-width: 760px)");
 
 let panels = loadPanels();
 let project = loadProject();
@@ -117,6 +122,8 @@ window.ShonodePanelImageStorage = {
   ready: initializePanelImageStorage,
   flush: flushPanelImagePersistence
 };
+
+syncSaveButtonIdleLabel();
 
 addPanelButton.addEventListener("click", () => {
   pushHistoryState();
@@ -816,9 +823,19 @@ function flashSaveButton(label) {
   window.clearTimeout(saveButtonTimeoutId);
   saveButtonTimeoutId = window.setTimeout(() => {
     if (saveWorkspaceLabel) {
-      saveWorkspaceLabel.textContent = "저장";
+      saveWorkspaceLabel.textContent = SAVE_BUTTON_IDLE_LABEL;
     }
   }, 1600);
+}
+
+function syncSaveButtonIdleLabel() {
+  if (!saveWorkspaceLabel) {
+    return;
+  }
+
+  saveWorkspaceLabel.textContent = SAVE_BUTTON_IDLE_LABEL;
+  saveWorkspaceButton?.setAttribute("aria-label", "로컬 저장");
+  saveWorkspaceButton?.setAttribute("title", "브라우저에 즉시 저장");
 }
 
 function saveWorkspace(options = {}) {
@@ -829,14 +846,14 @@ function saveWorkspace(options = {}) {
   const didSave = didSavePanels && didSaveProject;
 
   if (didSave) {
-    flashSaveButton("저장 완료");
+    flashSaveButton(SAVE_BUTTON_SUCCESS_LABEL);
     if (announce) {
-      setStatus("변경사항을 저장했습니다.");
+      setStatus("변경사항을 브라우저에 저장했습니다.");
     }
     return true;
   }
 
-  flashSaveButton("저장 실패");
+  flashSaveButton(SAVE_BUTTON_FAILURE_LABEL);
   return false;
 }
 
@@ -1657,6 +1674,16 @@ function setZoom(nextZoom, anchor = {}) {
 
 function goToWorkspaceHome() {
   window.ShonodeWorkspaceBridge?.closePanels?.({ announce: false });
+  const targetPanel = getHomeTargetPanel();
+
+  if (MOBILE_HOME_MEDIA_QUERY.matches && targetPanel) {
+    const targetZoom = clamp(Math.max(zoom, NARROW_HOME_ZOOM), MIN_ZOOM, MAX_ZOOM);
+    zoomToPanel(targetPanel.id, targetZoom);
+    focusPanel(targetPanel.id);
+    setStatus("현재 컷을 중심으로 이동했습니다.");
+    return;
+  }
+
   clearSelection();
   fitCanvasToView({ announce: false });
   setStatus("작업 홈으로 돌아왔습니다.");
@@ -1690,6 +1717,31 @@ function fitCanvasToView(options = {}) {
   }
 
   setStatus("현재 배치에 맞게 화면을 조정했습니다.");
+}
+
+function getHomeTargetPanel() {
+  const [selectedPanelId] = selectedPanelIds;
+  if (selectedPanelId) {
+    return getPanelById(selectedPanelId);
+  }
+
+  return panels[0] ?? null;
+}
+
+function zoomToPanel(panelId, targetZoom) {
+  const panel = getPanelById(panelId);
+  const card = board.querySelector(`[data-panel-id="${panelId}"]`);
+
+  if (!panel || !card) {
+    return false;
+  }
+
+  setZoom(targetZoom, {
+    contentX: panel.x + card.offsetWidth / 2,
+    contentY: panel.y + card.offsetHeight / 2
+  });
+
+  return true;
 }
 
 function updateZoomUI() {

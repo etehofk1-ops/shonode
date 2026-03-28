@@ -179,6 +179,10 @@ h1 {
   flex-wrap: nowrap;
 }
 
+.action-row--minimal > * {
+  flex: 0 0 auto;
+}
+
 .workspace-chip {
   display: inline-flex;
   align-items: center;
@@ -542,6 +546,39 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.sidebar-panel-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 12px;
+  margin-bottom: 2px;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(248, 251, 255, 0.88));
+  backdrop-filter: blur(16px);
+}
+
+.sidebar-panel-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sidebar-panel-title h2 {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.2;
+}
+
+.sidebar-close-button {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  white-space: nowrap;
 }
 
 .sidebar-card {
@@ -1576,6 +1613,11 @@ h1 {
   pointer-events: auto;
 }
 
+.canvas-tool-group > * {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .icon-tool-button,
 .icon-button {
   display: inline-grid;
@@ -2514,6 +2556,8 @@ button:disabled {
 
   .action-row--minimal {
     flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
   }
 
   .sidebar-rail {
@@ -2571,8 +2615,8 @@ button:disabled {
   }
 
   .canvas-toolbar {
-    left: 56px;
-    right: 56px;
+    left: 12px;
+    right: 12px;
     flex-direction: column;
     align-items: stretch;
   }
@@ -2583,10 +2627,11 @@ button:disabled {
 
   .canvas-tool-group {
     width: 100%;
+    justify-content: flex-start;
   }
 
   .canvas-viewport {
-    padding: 144px 24px 56px;
+    padding: 132px 20px 52px;
   }
 
   .media-switcher {
@@ -2621,21 +2666,21 @@ button:disabled {
   }
 
   .action-row--minimal {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
-    justify-content: stretch;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
   }
 
   .action-row--minimal .secondary-button,
   .action-row--minimal .ghost-button,
   .action-row--minimal .primary-button {
-    width: 100%;
     min-width: 0;
+    white-space: nowrap;
   }
 
   .action-row--minimal .save-workspace-button {
-    grid-column: 1 / -1;
+    width: auto;
+    padding-inline: 16px;
   }
 
   .workspace-overlay {
@@ -2687,7 +2732,7 @@ button:disabled {
   }
 
   .canvas-viewport {
-    padding: 172px 16px 28px;
+    padding: 144px 16px 28px;
   }
 
   .workspace-stage {
@@ -2768,8 +2813,25 @@ button:disabled {
     border-radius: 20px;
   }
 
-  .story-card {
-    width: min(340px, calc(100vw - 56px));
+.story-card {
+  width: min(340px, calc(100vw - 56px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .workspace-stage.is-generating::after,
+  .sidebar-generate-button.is-generating::before,
+  .sidebar-generate-button.is-generating::after {
+    animation: none !important;
   }
 }
 

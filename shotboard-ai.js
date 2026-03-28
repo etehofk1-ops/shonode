@@ -47,6 +47,12 @@
   const rightRailEl = document.getElementById("rightSidebarRail");
   const leftRailToggleButtonEl = document.getElementById("leftRailToggleButton");
   const rightRailToggleButtonEl = document.getElementById("rightRailToggleButton");
+  const closeProjectSidebarButtonEl = document.getElementById("closeProjectSidebarButton");
+  const closePreviewSidebarButtonEl = document.getElementById("closePreviewSidebarButton");
+  const projectSidebarPanelEyebrowEl = document.getElementById("projectSidebarPanelEyebrow");
+  const projectSidebarPanelTitleEl = document.getElementById("projectSidebarPanelTitle");
+  const previewSidebarPanelEyebrowEl = document.getElementById("previewSidebarPanelEyebrow");
+  const previewSidebarPanelTitleEl = document.getElementById("previewSidebarPanelTitle");
   const projectSidebarEl = document.getElementById("projectSidebar");
   const previewSidebarEl = document.getElementById("previewSidebar");
   const leftRailButtons = Array.from(document.querySelectorAll('.sidebar-rail-button[data-sidebar-side="left"]'));
@@ -576,6 +582,8 @@
     ...(window.ShonodeWorkspaceBridge || {}),
     createSnapshot: createWorkspaceExportSnapshot,
     closePanels: closeSidebarPanels,
+    closeProjectSidebar: () => closeSidebarSide("left"),
+    closePreviewSidebar: () => closeSidebarSide("right"),
     exportWorkspace: handleExportWorkspace,
     importWorkspace: importWorkspaceSnapshot,
     regenerateSelected: handleRegenerateSelectedPanels
@@ -829,8 +837,8 @@
 
     const itemCount = workspaceLibraryItems.length;
     workspaceLibraryMetaEl.textContent = itemCount > 0
-      ? `총 ${itemCount}개 프로젝트 · 현재 작업은 자동 저장됩니다.`
-      : "현재 작업은 자동 저장됩니다.";
+      ? `총 ${itemCount}개 프로젝트 · 현재 작업은 브라우저에 자동 저장됩니다.`
+      : "현재 작업은 브라우저에 자동 저장됩니다.";
 
     if (itemCount === 0) {
       workspaceLibraryListEl.innerHTML = '<div class="workspace-library-empty">아직 저장된 프로젝트가 없습니다. 새 프로젝트를 만들거나 현재 작업을 복제해 시작해 보세요.</div>';
@@ -1092,6 +1100,14 @@
 
     rightRailToggleButtonEl?.addEventListener("click", () => {
       toggleRailCollapsed("right");
+    });
+
+    closeProjectSidebarButtonEl?.addEventListener("click", () => {
+      closeSidebarSide("left");
+    });
+
+    closePreviewSidebarButtonEl?.addEventListener("click", () => {
+      closeSidebarSide("right");
     });
 
     workspaceOverlayEl?.addEventListener("click", () => {
@@ -1867,9 +1883,46 @@
     }
   }
 
+  function closeSidebarSide(side, announce = true) {
+    const activeSections = side === "left" ? activeLeftSidebarSections : activeRightSidebarSections;
+    const hadOpenPanel = activeSections.length > 0;
+    setSidebarSections(side, [], false);
+
+    if (!announce || !hadOpenPanel) {
+      return;
+    }
+
+    setStatus(`${side === "left" ? "프로젝트" : "프리뷰"} 패널을 닫았습니다.`);
+  }
+
   function getSidebarSectionLabel(side, sectionId) {
     const button = getRailButtons(side).find((item) => item.dataset.sidebarTarget === sectionId);
     return button?.dataset.sidebarLabel ?? "";
+  }
+
+  function syncSidebarPanelToolbar(side, activeSectionIds) {
+    const eyebrowEl = side === "left" ? projectSidebarPanelEyebrowEl : previewSidebarPanelEyebrowEl;
+    const titleEl = side === "left" ? projectSidebarPanelTitleEl : previewSidebarPanelTitleEl;
+    const fallbackEyebrow = side === "left" ? "Project" : "Preview";
+    const fallbackTitle = side === "left" ? "프로젝트 개요" : "프리뷰";
+
+    if (!eyebrowEl || !titleEl) {
+      return;
+    }
+
+    const activeSectionId = activeSectionIds[0];
+    if (!activeSectionId) {
+      eyebrowEl.textContent = fallbackEyebrow;
+      titleEl.textContent = fallbackTitle;
+      return;
+    }
+
+    const sectionEl = getSidebarSections(side).find((section) => section.dataset.sidebarSection === activeSectionId);
+    const nextEyebrow = sectionEl?.querySelector(".sidebar-eyebrow")?.textContent?.trim() || fallbackEyebrow;
+    const nextTitle = sectionEl?.querySelector("h2")?.textContent?.trim() || getSidebarSectionLabel(side, activeSectionId) || fallbackTitle;
+
+    eyebrowEl.textContent = nextEyebrow;
+    titleEl.textContent = nextTitle;
   }
 
   function applySidebarRailState() {
@@ -1914,6 +1967,8 @@
       section.hidden = !isActive;
       section.classList.toggle("is-active", isActive);
     });
+
+    syncSidebarPanelToolbar(side, activeSectionIds);
   }
 
   function startLinkDrag(event, sourceId) {
