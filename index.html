@@ -362,6 +362,32 @@
             <section id="board" class="board" aria-live="polite"></section>
           </div>
         </div>
+
+        <!-- Bottom Edit Bar -->
+        <div id="editBar" class="edit-bar">
+          <div class="edit-bar-strip">
+            <button id="editBarTabTimeline" class="edit-bar-tab is-active" type="button" data-edit-tab="timeline">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 7H21M3 12H21M3 17H21"></path>
+                <path d="M7 4V10M12 4V10M17 4V10"></path>
+              </svg>
+              <span>타임라인</span>
+            </button>
+            <div class="edit-bar-sep" aria-hidden="true"></div>
+            <span id="editTotalDuration" class="edit-duration-label">총 0초</span>
+            <div class="edit-bar-spacer" aria-hidden="true"></div>
+            <button id="editBarToggle" class="edit-bar-toggle" type="button" aria-expanded="false" aria-label="편집 패널 열기">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 15L12 9L18 15"></path>
+              </svg>
+            </button>
+          </div>
+          <div id="editBarContent" class="edit-bar-content" hidden>
+            <div id="editTimeline" class="edit-timeline" role="list" aria-label="타임라인 컷 목록">
+              <div class="edit-timeline-empty">컷을 추가하면 타임라인이 표시됩니다.</div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <nav id="rightSidebarRail" class="sidebar-rail sidebar-rail--right" aria-label="오른쪽 사이드바 레일">
