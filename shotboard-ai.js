@@ -35,6 +35,20 @@
   const aiSummaryOutputEl = document.getElementById("aiSummaryOutput");
   const aiSequenceOutputEl = document.getElementById("aiSequenceOutput");
   const selectionDetailOutputEl = document.getElementById("selectionDetailOutput");
+  const pipelinePromptLabEl = document.getElementById("pipelinePromptLab");
+  const pipelineTargetMetaEl = document.getElementById("pipelineTargetMeta");
+  const pipelineSubjectInputEl = document.getElementById("pipelineSubjectInput");
+  const pipelineLookInputEl = document.getElementById("pipelineLookInput");
+  const pipelineGoalInputEl = document.getElementById("pipelineGoalInput");
+  const pipelineIdeationModeInputEl = document.getElementById("pipelineIdeationModeInput");
+  const pipelineVideoModeInputEl = document.getElementById("pipelineVideoModeInput");
+  const pipelineStep4ModeLabelEl = document.getElementById("pipelineStep4ModeLabel");
+  const pipelineStep5ModeLabelEl = document.getElementById("pipelineStep5ModeLabel");
+  const pipelineStep1OutputEl = document.getElementById("pipelineStep1Output");
+  const pipelineStep2OutputEl = document.getElementById("pipelineStep2Output");
+  const pipelineStep3OutputEl = document.getElementById("pipelineStep3Output");
+  const pipelineStep4OutputEl = document.getElementById("pipelineStep4Output");
+  const pipelineStep5OutputEl = document.getElementById("pipelineStep5Output");
   const generatePlanButtonEl = document.getElementById("generatePlanButton");
   const generatePlanButtonLabelEl = document.getElementById("generatePlanButtonLabel");
   const regenerateSelectionButtonEl = document.getElementById("regenerateSelectionButton");
@@ -91,6 +105,7 @@
   const originalPersistProject = persistProject;
   const originalPersistPanels = persistPanels;
   const originalPersistViewState = persistViewState;
+  const originalSyncSelectionUI = syncSelectionUI;
 
   let aiGenerating = false;
   let aiGenerationStageIndex = 0;
@@ -118,7 +133,12 @@
       referenceWeight: "2.0",
       aiSummary: "",
       previewVideoUrl: "",
-      previewPosterUrl: ""
+      previewPosterUrl: "",
+      pipelineSubject: "",
+      pipelineLook: "",
+      pipelineGoal: "",
+      pipelineIdeationMode: "i2t",
+      pipelineVideoMode: "start-end"
     };
   };
 
@@ -131,7 +151,12 @@
       referenceWeight: sanitizeReferenceWeight(candidate?.referenceWeight),
       aiSummary: typeof candidate?.aiSummary === "string" ? candidate.aiSummary : "",
       previewVideoUrl: typeof candidate?.previewVideoUrl === "string" ? candidate.previewVideoUrl : "",
-      previewPosterUrl: typeof candidate?.previewPosterUrl === "string" ? candidate.previewPosterUrl : ""
+      previewPosterUrl: typeof candidate?.previewPosterUrl === "string" ? candidate.previewPosterUrl : "",
+      pipelineSubject: typeof candidate?.pipelineSubject === "string" ? candidate.pipelineSubject : "",
+      pipelineLook: typeof candidate?.pipelineLook === "string" ? candidate.pipelineLook : "",
+      pipelineGoal: typeof candidate?.pipelineGoal === "string" ? candidate.pipelineGoal : "",
+      pipelineIdeationMode: sanitizePipelineIdeationMode(candidate?.pipelineIdeationMode),
+      pipelineVideoMode: sanitizePipelineVideoMode(candidate?.pipelineVideoMode)
     };
   };
 
@@ -143,7 +168,12 @@
       referenceWeight: sanitizeReferenceWeight(projectValue.referenceWeight),
       aiSummary: projectValue.aiSummary ?? "",
       previewVideoUrl: projectValue.previewVideoUrl ?? "",
-      previewPosterUrl: projectValue.previewPosterUrl ?? ""
+      previewPosterUrl: projectValue.previewPosterUrl ?? "",
+      pipelineSubject: projectValue.pipelineSubject ?? "",
+      pipelineLook: projectValue.pipelineLook ?? "",
+      pipelineGoal: projectValue.pipelineGoal ?? "",
+      pipelineIdeationMode: sanitizePipelineIdeationMode(projectValue.pipelineIdeationMode),
+      pipelineVideoMode: sanitizePipelineVideoMode(projectValue.pipelineVideoMode)
     };
   };
 
@@ -163,6 +193,7 @@
       i2vStartPrompt: "",
       i2vMotionPrompt: "",
       i2vEndPrompt: "",
+      i2vOmniPrompt: "",
       nextPanelIds: [],
       videoFileName: "",
       ...overrides
@@ -201,6 +232,7 @@
       i2vStartPrompt: typeof panel?.i2vStartPrompt === "string" ? panel.i2vStartPrompt : "",
       i2vMotionPrompt: typeof panel?.i2vMotionPrompt === "string" ? panel.i2vMotionPrompt : "",
       i2vEndPrompt: typeof panel?.i2vEndPrompt === "string" ? panel.i2vEndPrompt : "",
+      i2vOmniPrompt: typeof panel?.i2vOmniPrompt === "string" ? panel.i2vOmniPrompt : "",
       nextPanelIds: Array.isArray(panel?.nextPanelIds) ? panel.nextPanelIds.filter((value) => typeof value === "string") : [],
       videoFileName: typeof panel?.videoFileName === "string" ? panel.videoFileName : ""
     };
@@ -230,6 +262,21 @@
     if (aiReferenceWeightInputEl) {
       aiReferenceWeightInputEl.value = sanitizeReferenceWeight(project.referenceWeight);
     }
+    if (pipelineSubjectInputEl) {
+      pipelineSubjectInputEl.value = project.pipelineSubject ?? "";
+    }
+    if (pipelineLookInputEl) {
+      pipelineLookInputEl.value = project.pipelineLook ?? "";
+    }
+    if (pipelineGoalInputEl) {
+      pipelineGoalInputEl.value = project.pipelineGoal ?? "";
+    }
+    if (pipelineIdeationModeInputEl) {
+      pipelineIdeationModeInputEl.value = sanitizePipelineIdeationMode(project.pipelineIdeationMode);
+    }
+    if (pipelineVideoModeInputEl) {
+      pipelineVideoModeInputEl.value = sanitizePipelineVideoMode(project.pipelineVideoMode);
+    }
     renderWorkspaceLibrary();
     renderAiReferenceImages();
     renderAiOutputs();
@@ -255,6 +302,12 @@
   persistViewState = function overridePersistViewState(...args) {
     originalPersistViewState(...args);
     scheduleWorkspaceLibrarySync();
+  };
+
+  syncSelectionUI = function overrideSyncSelectionUI(...args) {
+    originalSyncSelectionUI(...args);
+    renderSelectionDetail();
+    renderPromptPipeline();
   };
 
   updatePanel = function overrideUpdatePanel(panelId, updates, options = {}) {
@@ -365,6 +418,9 @@
     const i2vStartInput = fragment.querySelector(".i2v-start-input");
     const i2vMotionInput = fragment.querySelector(".i2v-motion-input");
     const i2vEndInput = fragment.querySelector(".i2v-end-input");
+    const i2vOmniInput = fragment.querySelector(".i2v-omni-input");
+    const i2vSplitFields = fragment.querySelectorAll(".i2v-split-field");
+    const i2vOmniField = fragment.querySelector(".i2v-omni-field");
     const t2iTitleEl = fragment.querySelector("[data-prompt-title]") || fragment.querySelector(".prompt-panel-title");
     const t2iTitleTextEl = fragment.querySelector('[data-prompt-title-kind="t2i"]');
     const i2iTitleTextEl = fragment.querySelector('[data-prompt-title-kind="i2i"]');
@@ -388,6 +444,16 @@
     i2vStartInput.value = panel.i2vStartPrompt;
     i2vMotionInput.value = panel.i2vMotionPrompt;
     i2vEndInput.value = panel.i2vEndPrompt;
+    if (i2vOmniInput) {
+      i2vOmniInput.value = panel.i2vOmniPrompt || "";
+    }
+    const useOmniPrompt = sanitizePipelineVideoMode(project.pipelineVideoMode) === "omni";
+    i2vSplitFields.forEach((field) => {
+      field.hidden = useOmniPrompt;
+    });
+    if (i2vOmniField) {
+      i2vOmniField.hidden = !useOmniPrompt;
+    }
     if (t2iTitleTextEl && i2iTitleTextEl) {
       const isI2I = getPromptMode(panel) === "i2i";
       t2iTitleTextEl.hidden = isI2I;
@@ -560,6 +626,7 @@
     bindPanelPromptInput(i2vStartInput, panel.id, "i2vStartPrompt", `panel-i2v-start:${panel.id}`);
     bindPanelPromptInput(i2vMotionInput, panel.id, "i2vMotionPrompt", `panel-i2v-motion:${panel.id}`);
     bindPanelPromptInput(i2vEndInput, panel.id, "i2vEndPrompt", `panel-i2v-end:${panel.id}`);
+    bindPanelPromptInput(i2vOmniInput, panel.id, "i2vOmniPrompt", `panel-i2v-omni:${panel.id}`);
 
     // Vid panel: hydrate state
     const blobUrl = panelVideoBlobUrls.get(panel.id);
@@ -627,6 +694,11 @@
   bindProjectField(aiReferenceWeightInputEl, "referenceWeight");
   bindProjectField(previewVideoUrlInputEl, "previewVideoUrl");
   bindProjectField(previewPosterUrlInputEl, "previewPosterUrl");
+  bindProjectField(pipelineSubjectInputEl, "pipelineSubject");
+  bindProjectField(pipelineLookInputEl, "pipelineLook");
+  bindProjectField(pipelineGoalInputEl, "pipelineGoal");
+  bindProjectField(pipelineIdeationModeInputEl, "pipelineIdeationMode");
+  bindProjectField(pipelineVideoModeInputEl, "pipelineVideoMode");
 
   generatePlanButtonEl.addEventListener("click", handleGeneratePlan);
   regenerateSelectionButtonEl?.addEventListener("click", handleRegenerateSelectedPanels);
@@ -634,6 +706,18 @@
   createWorkspaceButtonEl?.addEventListener("click", handleCreateWorkspace);
   duplicateWorkspaceButtonEl?.addEventListener("click", handleDuplicateWorkspace);
   workspaceLibraryListEl?.addEventListener("click", handleWorkspaceLibraryClick);
+  pipelinePromptLabEl?.addEventListener("click", async (event) => {
+    const copyButton = event.target.closest("[data-copy-target]");
+    if (copyButton) {
+      await copyPipelinePrompt(copyButton.dataset.copyTarget, copyButton.dataset.copyLabel);
+      return;
+    }
+
+    const applyButton = event.target.closest("[data-pipeline-apply]");
+    if (applyButton) {
+      applyPipelineStepToSelected(applyButton.dataset.pipelineApply);
+    }
+  });
   togglePreviewButtonEl?.addEventListener("click", () => {
     setSidebarSections("right", activeRightSidebarSections.length > 0 ? [] : ["video"], false);
   });
@@ -667,22 +751,413 @@
     }
 
     const historyKey = `project:${fieldName}`;
-    element.addEventListener("input", () => {
+    const handleValueChange = () => {
       captureHistoryGroup(historyKey);
-      const nextValue = fieldName === "referenceWeight"
-        ? sanitizeReferenceWeight(element.value)
-        : element.value;
+      const nextValue =
+        fieldName === "referenceWeight"
+          ? sanitizeReferenceWeight(element.value)
+          : fieldName === "pipelineIdeationMode"
+            ? sanitizePipelineIdeationMode(element.value)
+            : fieldName === "pipelineVideoMode"
+              ? sanitizePipelineVideoMode(element.value)
+              : element.value;
       updateProject({ [fieldName]: nextValue }, { announce: false });
       if (fieldName === "previewVideoUrl" || fieldName === "previewPosterUrl") {
         renderPreviewVideo();
+      } else if (fieldName === "pipelineVideoMode") {
+        renderAiOutputs();
+        renderPanels();
       } else {
         renderAiOutputs();
       }
-    });
+    };
+
+    element.addEventListener("input", handleValueChange);
+    if (element.tagName === "SELECT") {
+      element.addEventListener("change", handleValueChange);
+    }
 
     element.addEventListener("blur", () => {
       releaseHistoryGroup(historyKey);
     });
+  }
+
+  function sanitizePipelineIdeationMode(value) {
+    return value === "i2i" ? "i2i" : "i2t";
+  }
+
+  function sanitizePipelineVideoMode(value) {
+    return value === "omni" ? "omni" : "start-end";
+  }
+
+  function getPipelineIdeationModeLabel(value) {
+    return sanitizePipelineIdeationMode(value) === "i2i" ? "I2I" : "I2T";
+  }
+
+  function getPipelineVideoModeLabel(value) {
+    return sanitizePipelineVideoMode(value) === "omni" ? "Omni" : "Start / End";
+  }
+
+  function trimPipelineText(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  function compactPipelineText(value, maxLength = 180) {
+    const normalized = trimPipelineText(value).replace(/\s+/g, " ");
+    if (!normalized) {
+      return "";
+    }
+
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+  }
+
+  function getPipelineSelectedPanels() {
+    return panels.filter((panel) => selectedPanelIds.has(panel.id));
+  }
+
+  function buildPipelineContext(selectedPanels = getPipelineSelectedPanels()) {
+    const primaryPanel = selectedPanels.length === 1 ? selectedPanels[0] : null;
+    const brief = trimPipelineText(project.aiBrief);
+    const goal = trimPipelineText(project.pipelineGoal)
+      || trimPipelineText(primaryPanel?.caption)
+      || trimPipelineText(project.logline)
+      || brief
+      || "Create a short premium commercial video with strong identity continuity.";
+    const subject = trimPipelineText(project.pipelineSubject)
+      || trimPipelineText(primaryPanel?.sceneTitle)
+      || compactPipelineText(brief.split(/[.!?]/)[0] || "", 96)
+      || "hero subject";
+    const look = trimPipelineText(project.pipelineLook)
+      || trimPipelineText(project.tone)
+      || "premium commercial, cinematic, identity-consistent";
+    const ideationMode = sanitizePipelineIdeationMode(project.pipelineIdeationMode);
+    const videoMode = sanitizePipelineVideoMode(project.pipelineVideoMode);
+    const promptSeed = trimPipelineText(primaryPanel?.t2iPrompt)
+      || trimPipelineText(primaryPanel?.i2tPrompt)
+      || trimPipelineText(primaryPanel?.caption);
+    const referenceNames = aiReferenceImages
+      .slice(0, 4)
+      .map((image) => trimPipelineText(image?.name))
+      .filter(Boolean);
+    const referenceGuide = referenceNames.length > 0
+      ? `${referenceNames.join(", ")}${aiReferenceImages.length > referenceNames.length ? ` + ${aiReferenceImages.length - referenceNames.length} more` : ""}`
+      : "No attached project references yet";
+    const targetSummary = primaryPanel
+      ? compactPipelineText([primaryPanel.sceneTitle, primaryPanel.caption].filter(Boolean).join(" - "), 180)
+      : selectedPanels.length > 1
+        ? `${selectedPanels.length} selected storyboard cuts`
+        : compactPipelineText(goal, 180);
+    const targetMeta = primaryPanel
+      ? `현재 타깃: 선택 컷 - ${primaryPanel.sceneTitle || "Untitled cut"}`
+      : selectedPanels.length > 1
+        ? `현재 타깃: 선택 컷 ${selectedPanels.length}개`
+        : "현재 타깃: 프로젝트 전체 브리프";
+
+    return {
+      primaryPanel,
+      selectedPanels,
+      brief,
+      goal,
+      subject,
+      look,
+      ideationMode,
+      videoMode,
+      promptSeed,
+      referenceGuide,
+      referenceCount: aiReferenceImages.length,
+      targetSummary,
+      targetMeta,
+      aspectRatio: trimPipelineText(project.aspectRatio) || "16:9"
+    };
+  }
+
+  function buildStep1Prompt(context) {
+    return [
+      `Create a single master concept still for ${context.subject}.`,
+      `Visual direction: ${context.look}.`,
+      `This image will become the identity seed for a multi-angle sheet, a 9-expression sheet, storyboard planning, and final I2V generation.`,
+      `Keep the subject clean, readable, and stable: consistent face or product identity, strong silhouette, precise costume or material details, premium lighting, and a polished commercial finish.`,
+      `Compose it as one hero image in ${context.aspectRatio} with no collage, no split panels, no text, and no watermark.`,
+      context.referenceCount > 0
+        ? `Use attached references only as mood or identity anchors: ${context.referenceGuide}.`
+        : "Design the first hero image from text only, but keep the identity easy to reuse in later image-to-image steps.",
+      `Video intent to preserve later: ${context.goal}.`
+    ].join("\n");
+  }
+
+  function buildStep2Prompt(context) {
+    return [
+      `Use the Step 1 master concept image as the only identity anchor for ${context.subject}.`,
+      `Generate a clean multi-angle turnaround grid for the same subject.`,
+      "Include 8 views in one sheet: full front, left three-quarter, left profile, rear three-quarter, full back, right three-quarter, right profile, and a close portrait.",
+      "Lock identity, proportions, outfit or product detail, materials, hair, accessories, and lighting family across every tile.",
+      "Use a neutral studio background, evenly spaced grid, clear separation between views, no extra characters, no text labels, and no watermark.",
+      `Keep the same commercial tone: ${context.look}.`
+    ].join("\n");
+  }
+
+  function buildStep3Prompt(context) {
+    return [
+      `Use the Step 1 master concept image as the identity anchor for ${context.subject}.`,
+      "Generate a 3x3 expression sheet with 9 readable variations of the same subject.",
+      "Expressions or moods: neutral, soft smile, bright smile, confident, focused, surprised, serious, playful, intense.",
+      "Keep identity, costume, materials, camera distance, lighting family, and background consistency locked across all nine tiles.",
+      "Make facial muscles, eye direction, and mouth shape clearly readable while preserving the same person or product styling.",
+      "Clean 3x3 grid, no text, no watermark, no extra props unless they are core identity anchors."
+    ].join("\n");
+  }
+
+  function buildStep4Prompt(context) {
+    const ideationLabel = getPipelineIdeationModeLabel(context.ideationMode);
+    const shotOutputLine = ideationLabel === "I2I"
+      ? "- For each shot, write an English I2I storyboard frame prompt that uses the attached sheets as identity anchors."
+      : "- For each shot, write an English I2T ideation prompt plus one keyframe direction sentence.";
+
+    return [
+      "I am attaching these development assets for the same subject:",
+      "1. the Step 1 master concept image",
+      "2. the Step 2 multi-angle turnaround grid",
+      "3. the Step 3 nine-expression sheet",
+      "",
+      `I want to make this video: ${context.goal}`,
+      `Current planning target: ${context.targetSummary}`,
+      `Please help me develop this with an ${ideationLabel} storyboard-planning workflow.`,
+      "",
+      "Deliverables:",
+      "- Suggest 3 distinct concept directions with different emotional arcs.",
+      "- Pick the strongest direction and expand it into a practical 6-8 shot storyboard.",
+      "- For each shot, explain the purpose in Korean, camera framing, lens feel, movement, and which angle or expression from the attached sheets should drive the shot.",
+      shotOutputLine,
+      "- Recommend one strong opening frame and one strong ending frame.",
+      "- Add continuity notes so the same identity survives into final I2V generation.",
+      "",
+      "Important rules:",
+      "- Do not redesign the hero into a different person or product.",
+      "- Preserve identity, materials, costume, silhouette, and premium mood from the attached sheets.",
+      "- Keep every idea visually producible as a short commercial board."
+    ].join("\n");
+  }
+
+  function buildStep5Prompt(context) {
+    const videoLabel = getPipelineVideoModeLabel(context.videoMode);
+    const outputLines = context.videoMode === "omni"
+      ? [
+          "- For each approved shot, return one production-ready Omni prompt in English.",
+          "- After each prompt, list the continuity anchors that must stay stable from shot to shot.",
+          "- Add one short guardrail line about what must not drift."
+        ]
+      : [
+          "- For each approved shot, return Start Frame Prompt, Motion Prompt, and End Frame Prompt in English.",
+          "- Add one short continuity note between the current shot and the next shot.",
+          "- Add one short guardrail line about what must not drift."
+        ];
+
+    return [
+      "I am attaching the approved assets for final video generation:",
+      "1. the Step 1 master concept image",
+      "2. the Step 2 multi-angle turnaround grid",
+      "3. the Step 3 nine-expression sheet",
+      "4. the approved storyboard frames and shot notes from Step 4",
+      "",
+      `Final video goal: ${context.goal}`,
+      `Current shot target: ${context.targetSummary}`,
+      `Please convert these assets into ${videoLabel} I2V prompts for Kling, Seedance 2.0, or a similar high-end video model.`,
+      "",
+      "Output requirements:",
+      ...outputLines,
+      "",
+      "Global rules:",
+      `- Keep this subject stable across the whole sequence: ${context.subject}.`,
+      `- Preserve this visual direction: ${context.look}.`,
+      "- Avoid face drift, costume drift, anatomy drift, and background continuity breaks.",
+      "- Motion should feel intentional, premium, and physically plausible.",
+      context.promptSeed
+        ? `- Use this approved prompt seed as a continuity anchor where helpful: ${context.promptSeed}`
+        : "- Use the approved storyboard frames as the main continuity anchor.",
+      "- Bridge shots smoothly so the end of one shot can set up the start of the next shot."
+    ].join("\n");
+  }
+
+  function renderPromptPipeline(selectedPanels = getPipelineSelectedPanels()) {
+    if (
+      !pipelineStep1OutputEl
+      || !pipelineStep2OutputEl
+      || !pipelineStep3OutputEl
+      || !pipelineStep4OutputEl
+      || !pipelineStep5OutputEl
+    ) {
+      return;
+    }
+
+    const context = buildPipelineContext(selectedPanels);
+    if (pipelineTargetMetaEl) {
+      pipelineTargetMetaEl.textContent = context.targetMeta;
+    }
+    if (pipelineStep4ModeLabelEl) {
+      pipelineStep4ModeLabelEl.textContent = getPipelineIdeationModeLabel(context.ideationMode);
+    }
+    if (pipelineStep5ModeLabelEl) {
+      pipelineStep5ModeLabelEl.textContent = getPipelineVideoModeLabel(context.videoMode);
+    }
+    pipelinePromptLabEl?.querySelectorAll("[data-pipeline-apply]").forEach((button) => {
+      const enabled = selectedPanels.length === 1;
+      button.disabled = !enabled;
+      button.title = enabled ? "선택 컷에 바로 반영" : "선택 컷 1개일 때만 적용할 수 있습니다.";
+    });
+
+    pipelineStep1OutputEl.value = buildStep1Prompt(context);
+    pipelineStep2OutputEl.value = buildStep2Prompt(context);
+    pipelineStep3OutputEl.value = buildStep3Prompt(context);
+    pipelineStep4OutputEl.value = buildStep4Prompt(context);
+    pipelineStep5OutputEl.value = buildStep5Prompt(context);
+  }
+
+  async function copyPipelinePrompt(targetId, label) {
+    const target = document.getElementById(targetId);
+    if (!target) {
+      return;
+    }
+
+    const text = typeof target.value === "string" ? target.value : target.textContent || "";
+    if (!text.trim()) {
+      setStatus("복사할 프롬프트가 아직 없습니다.", "warning");
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        target.focus();
+        target.select?.();
+        document.execCommand?.("copy");
+      }
+      setStatus(`${label || "프롬프트"}를 복사했습니다.`);
+    } catch (error) {
+      console.warn("Failed to copy pipeline prompt.", error);
+      setStatus("프롬프트 복사에 실패했습니다.", "warning");
+    }
+  }
+
+  function getSingleSelectedPanel() {
+    const selectedPanels = getPipelineSelectedPanels();
+    return selectedPanels.length === 1 ? selectedPanels[0] : null;
+  }
+
+  function getNextPanelForContinuity(panel) {
+    if (!panel) {
+      return null;
+    }
+
+    if (Array.isArray(panel.nextPanelIds) && panel.nextPanelIds.length > 0) {
+      const linkedPanel = getPanelById(panel.nextPanelIds[0]);
+      if (linkedPanel) {
+        return linkedPanel;
+      }
+    }
+
+    const panelIndex = panels.findIndex((item) => item.id === panel.id);
+    if (panelIndex >= 0 && panelIndex < panels.length - 1) {
+      return panels[panelIndex + 1];
+    }
+
+    return null;
+  }
+
+  function buildDirectI2VDraft(context) {
+    const panel = context.primaryPanel;
+    const nextPanel = getNextPanelForContinuity(panel);
+    const sceneTitle = trimPipelineText(panel?.sceneTitle) || context.subject;
+    const caption = trimPipelineText(panel?.caption) || context.goal;
+    const nextSceneTitle = trimPipelineText(nextPanel?.sceneTitle) || "the next storyboard beat";
+    const referenceSummary = getPanelReferenceImages(panel)
+      .map((item) => trimPipelineText(item?.name))
+      .filter(Boolean)
+      .join(", ");
+    const referenceLine = referenceSummary
+      ? `Reference anchors: ${referenceSummary}.`
+      : context.referenceCount > 0
+        ? `Reference anchors: ${context.referenceGuide}.`
+        : "Reference anchors: preserve the approved master concept identity exactly.";
+
+    if (context.videoMode === "omni") {
+      return {
+        omniPrompt: [
+          `Use the approved hero image, multi-angle sheet, and expression sheet for ${context.subject} as locked identity anchors.`,
+          `Create one premium commercial video shot for "${sceneTitle}".`,
+          `Shot intent: ${caption}.`,
+          `Overall video goal: ${context.goal}.`,
+          `Visual direction: ${context.look}.`,
+          `Camera and motion: refined cinematic movement, premium pacing, physically plausible motion, and clean continuity into ${nextSceneTitle}.`,
+          referenceLine,
+          "Preserve face or product identity, silhouette, materials, costume details, lighting family, and anatomy stability.",
+          "Avoid morphing, drift, extra limbs, broken hands, warped costume detail, random props, random text, or watermark."
+        ].join(" ")
+      };
+    }
+
+    return {
+      startPrompt: [
+        `${context.subject}, ${sceneTitle}`,
+        context.look,
+        `opening frame for ${caption}`,
+        "derived from the approved identity sheets",
+        "premium cinematic commercial still",
+        referenceLine
+      ].join(", "),
+      motionPrompt: [
+        `Refined camera move for ${sceneTitle}`,
+        "preserve identity and costume consistency",
+        `translate the shot intention "${caption}" into clean, premium motion`,
+        `bridge naturally toward ${nextSceneTitle}`,
+        "avoid face drift and anatomy drift"
+      ].join(", "),
+      endPrompt: [
+        `${context.subject}, ${sceneTitle}`,
+        `closing frame that resolves the shot and sets up ${nextSceneTitle}`,
+        context.look,
+        "premium ad finish",
+        "stable identity, stable materials, stable lighting"
+      ].join(", ")
+    };
+  }
+
+  function applyPipelineStepToSelected(step) {
+    const panel = getSingleSelectedPanel();
+    if (!panel) {
+      setStatus("선택 컷 1개를 먼저 고른 뒤 적용해 주세요.", "warning");
+      return;
+    }
+
+    const context = buildPipelineContext([panel]);
+    pushHistoryState();
+
+    if (step === "step1") {
+      updatePanel(panel.id, {
+        viewMode: "t2i",
+        imagePromptMode: "t2i",
+        t2iCollapsed: false,
+        t2iPrompt: pipelineStep1OutputEl?.value || buildStep1Prompt(context)
+      }, { announce: false });
+      updateHistoryUI();
+      setStatus(`${panel.sceneTitle || "선택 컷"}에 Step 1 T2I 프롬프트를 반영했습니다.`);
+      return;
+    }
+
+    if (step === "step5") {
+      const draft = buildDirectI2VDraft(context);
+      const isOmni = context.videoMode === "omni";
+      updatePanel(panel.id, {
+        viewMode: "i2v",
+        i2vCollapsed: false,
+        i2vStartPrompt: isOmni ? panel.i2vStartPrompt : draft.startPrompt,
+        i2vMotionPrompt: isOmni ? panel.i2vMotionPrompt : draft.motionPrompt,
+        i2vEndPrompt: isOmni ? panel.i2vEndPrompt : draft.endPrompt,
+        i2vOmniPrompt: isOmni ? draft.omniPrompt : ""
+      }, { announce: false });
+      updateHistoryUI();
+      setStatus(`${panel.sceneTitle || "선택 컷"}에 Step 5 I2V 프롬프트 초안을 반영했습니다.`);
+    }
   }
 
   function loadWorkspaceLibraryItems() {
@@ -2811,6 +3286,7 @@
   function renderSelectionDetail() {
     selectionDetailOutputEl.innerHTML = "";
     const selectedPanels = panels.filter((panel) => selectedPanelIds.has(panel.id));
+    renderPromptPipeline(selectedPanels);
 
     if (selectedPanels.length === 0) {
       selectionDetailOutputEl.textContent = "카드를 선택하면 연결 정보와 프롬프트 요약이 표시됩니다.";
@@ -3347,6 +3823,8 @@
       `;
       aiSequenceOutputEl.appendChild(emptyItem);
     }
+
+    renderPromptPipeline();
   }
 
   function getReferenceUsageMap() {

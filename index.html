@@ -213,6 +213,118 @@
             </div>
 
             <p id="aiPlanMeta" class="sidebar-meta-text">브리프를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.</p>
+            <div id="pipelinePromptLab" class="pipeline-lab">
+              <div class="pipeline-lab-header">
+                <p class="sidebar-eyebrow">Pipeline</p>
+                <h3>5단계 생성 워크플로우</h3>
+                <p class="pipeline-lab-copy">기본 이미지에서 다각도, 표정, 콘티 아이디어, I2V까지 지금 쓰는 생성 흐름을 한 번에 정리합니다.</p>
+              </div>
+
+              <div id="pipelineTargetMeta" class="pipeline-target-meta">현재 타깃: 프로젝트 전체 브리프</div>
+
+              <div class="pipeline-lab-grid">
+                <label class="sidebar-field">
+                  <span class="sidebar-label">핵심 피사체</span>
+                  <input id="pipelineSubjectInput" class="sidebar-input" type="text" placeholder="예: 승마 패션 모델, 블랙 말, 하이엔드 제품">
+                </label>
+
+                <label class="sidebar-field">
+                  <span class="sidebar-label">룩 & 스타일</span>
+                  <input id="pipelineLookInput" class="sidebar-input" type="text" placeholder="예: 럭셔리, 시네마틱, 차가운 무드">
+                </label>
+              </div>
+
+              <label class="sidebar-field">
+                <span class="sidebar-label">만들고 싶은 영상</span>
+                <textarea id="pipelineGoalInput" class="sidebar-input sidebar-textarea" rows="4" placeholder="예: 말과 모델의 관계가 드러나는 20초 브랜드 필름, 초반엔 절제되고 후반엔 속도감 있게"></textarea>
+              </label>
+
+              <div class="pipeline-lab-grid">
+                <label class="sidebar-field">
+                  <span class="sidebar-label">콘티 아이디어 방식</span>
+                  <select id="pipelineIdeationModeInput" class="sidebar-input sidebar-select">
+                    <option value="i2t">I2T 아이디어</option>
+                    <option value="i2i">I2I 콘티 프롬프트</option>
+                  </select>
+                </label>
+
+                <label class="sidebar-field">
+                  <span class="sidebar-label">영상 프롬프트 방식</span>
+                  <select id="pipelineVideoModeInput" class="sidebar-input sidebar-select">
+                    <option value="start-end">Start / Motion / End</option>
+                    <option value="omni">Omni 단일 프롬프트</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="pipeline-stage-list">
+                <article class="pipeline-stage-card">
+                  <div class="pipeline-stage-header">
+                    <div>
+                      <span class="pipeline-stage-index">Step 1</span>
+                      <strong class="pipeline-stage-title">기본 이미지 T2I</strong>
+                    </div>
+                    <div class="pipeline-stage-actions">
+                      <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep1Output" data-copy-label="Step 1 T2I">복사</button>
+                      <button class="secondary-button pipeline-apply-button" type="button" data-pipeline-apply="step1">선택 컷 적용</button>
+                    </div>
+                  </div>
+                  <p class="pipeline-stage-copy">첫 시드 이미지를 만드는 프롬프트입니다.</p>
+                  <textarea id="pipelineStep1Output" class="pipeline-output" rows="6" readonly></textarea>
+                </article>
+
+                <article class="pipeline-stage-card">
+                  <div class="pipeline-stage-header">
+                    <div>
+                      <span class="pipeline-stage-index">Step 2</span>
+                      <strong class="pipeline-stage-title">다각도 그리드 I2I</strong>
+                    </div>
+                    <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep2Output" data-copy-label="Step 2 I2I grid">복사</button>
+                  </div>
+                  <p class="pipeline-stage-copy">Step 1 결과 이미지를 기준으로 다각도 시트를 만드는 프롬프트입니다.</p>
+                  <textarea id="pipelineStep2Output" class="pipeline-output" rows="6" readonly></textarea>
+                </article>
+
+                <article class="pipeline-stage-card">
+                  <div class="pipeline-stage-header">
+                    <div>
+                      <span class="pipeline-stage-index">Step 3</span>
+                      <strong class="pipeline-stage-title">표정 시트 9그리드</strong>
+                    </div>
+                    <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep3Output" data-copy-label="Step 3 expression sheet">복사</button>
+                  </div>
+                  <p class="pipeline-stage-copy">Step 1 결과 이미지를 기준으로 9가지 표정 시트를 만드는 프롬프트입니다.</p>
+                  <textarea id="pipelineStep3Output" class="pipeline-output" rows="6" readonly></textarea>
+                </article>
+
+                <article class="pipeline-stage-card">
+                  <div class="pipeline-stage-header">
+                    <div>
+                      <span class="pipeline-stage-index">Step 4</span>
+                      <strong class="pipeline-stage-title">콘티 아이데이션 <span id="pipelineStep4ModeLabel" class="pipeline-stage-mode">I2T</span></strong>
+                    </div>
+                    <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep4Output" data-copy-label="Step 4 storyboard ideation">복사</button>
+                  </div>
+                  <p class="pipeline-stage-copy">다각도 시트와 표정 시트를 붙여 콘티 방향을 정리하는 프롬프트입니다.</p>
+                  <textarea id="pipelineStep4Output" class="pipeline-output" rows="8" readonly></textarea>
+                </article>
+
+                <article class="pipeline-stage-card">
+                  <div class="pipeline-stage-header">
+                    <div>
+                      <span class="pipeline-stage-index">Step 5</span>
+                      <strong class="pipeline-stage-title">I2V 제작 <span id="pipelineStep5ModeLabel" class="pipeline-stage-mode">Start / End</span></strong>
+                    </div>
+                    <div class="pipeline-stage-actions">
+                      <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep5Output" data-copy-label="Step 5 I2V">복사</button>
+                      <button class="secondary-button pipeline-apply-button" type="button" data-pipeline-apply="step5">선택 컷 적용</button>
+                    </div>
+                  </div>
+                  <p class="pipeline-stage-copy">확정된 콘티와 시트를 바탕으로 I2V 제작용 프롬프트를 정리합니다.</p>
+                  <textarea id="pipelineStep5Output" class="pipeline-output" rows="9" readonly></textarea>
+                </article>
+              </div>
+            </div>
           </section>
 
           <section class="sidebar-card sidebar-card--guide" data-sidebar-section="guide">
@@ -699,19 +811,24 @@
           </div>
 
           <div class="prompt-panel-body">
-            <label class="prompt-field">
+            <label class="prompt-field i2v-split-field">
               <span class="prompt-field-label">Start Frame</span>
               <textarea class="prompt-input i2v-start-input" rows="3" placeholder="시작 프레임 프롬프트"></textarea>
             </label>
 
-            <label class="prompt-field">
+            <label class="prompt-field i2v-split-field">
               <span class="prompt-field-label">Motion</span>
               <textarea class="prompt-input i2v-motion-input" rows="3" placeholder="카메라 이동 / 피사체 동선 / 속도"></textarea>
             </label>
 
-            <label class="prompt-field">
+            <label class="prompt-field i2v-split-field">
               <span class="prompt-field-label">End Frame</span>
               <textarea class="prompt-input i2v-end-input" rows="3" placeholder="엔드 프레임 프롬프트"></textarea>
+            </label>
+
+            <label class="prompt-field i2v-omni-field" hidden>
+              <span class="prompt-field-label">Omni Prompt</span>
+              <textarea class="prompt-input i2v-omni-input" rows="7" placeholder="씨댄스 2.0 Omni 또는 단일 I2V 프롬프트"></textarea>
             </label>
           </div>
           <p class="prompt-collapsed-preview" hidden></p>
