@@ -347,8 +347,8 @@
         {
           ...panel,
           id: idMap.get(panel.id),
-          x: clamp(panel.x + NEW_PANEL_OFFSET, PANEL_MARGIN, Math.max(PANEL_MARGIN, canvasWidth - PANEL_WIDTH - PANEL_MARGIN)),
-          y: clamp(panel.y + NEW_PANEL_OFFSET, PANEL_SAFE_TOP, Math.max(PANEL_SAFE_TOP, canvasHeight - 220)),
+          x: panel.x + NEW_PANEL_OFFSET,
+          y: panel.y + NEW_PANEL_OFFSET,
           z: zBase + index,
           nextPanelIds: (panel.nextPanelIds ?? []).map((nextId) => idMap.get(nextId)).filter(Boolean),
           videoFileName: ""

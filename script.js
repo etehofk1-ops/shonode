@@ -14,7 +14,10 @@ const DEFAULT_PANEL_COUNT = 6;
 const HISTORY_LIMIT = 80;
 const DEFAULT_CANVAS_WIDTH = 2800;
 const DEFAULT_CANVAS_HEIGHT = 1800;
+const CANVAS_EDGE_PADDING_X = 420;
+const CANVAS_EDGE_PADDING_Y = 220;
 const PANEL_WIDTH = 360;
+const PANEL_HEIGHT_FALLBACK = 420;
 const PANEL_MARGIN = 48;
 const PANEL_SAFE_TOP = 132;
 const PANEL_GAP_X = 400;
@@ -121,6 +124,8 @@ let panState = null;
 let spacePressed = false;
 let canvasWidth = DEFAULT_CANVAS_WIDTH;
 let canvasHeight = DEFAULT_CANVAS_HEIGHT;
+let canvasOriginX = 0;
+let canvasOriginY = 0;
 let metricsFrameId = null;
 let viewSaveTimeoutId = null;
 let undoStack = [];
@@ -599,13 +604,45 @@ function getDefaultPosition(index) {
   };
 }
 
+function worldToCanvasX(value) {
+  return value - canvasOriginX;
+}
+
+function worldToCanvasY(value) {
+  return value - canvasOriginY;
+}
+
+function canvasToWorldX(value) {
+  return value + canvasOriginX;
+}
+
+function canvasToWorldY(value) {
+  return value + canvasOriginY;
+}
+
+function positionCardElement(card, x, y) {
+  if (!card) {
+    return;
+  }
+
+  card.style.left = `${Math.round(worldToCanvasX(x))}px`;
+  card.style.top = `${Math.round(worldToCanvasY(y))}px`;
+}
+
+function syncBoardCardPositions() {
+  panels.forEach((panel) => {
+    const card = board.querySelector(`[data-panel-id="${panel.id}"]`);
+    positionCardElement(card, panel.x, panel.y);
+  });
+}
+
 function getSpawnPosition() {
-  const viewportX = canvasViewport.scrollLeft / zoom;
-  const viewportY = canvasViewport.scrollTop / zoom;
+  const viewportX = canvasToWorldX(canvasViewport.scrollLeft / zoom);
+  const viewportY = canvasToWorldY(canvasViewport.scrollTop / zoom);
 
   return {
-    x: clamp(viewportX + PANEL_MARGIN, PANEL_MARGIN, Math.max(PANEL_MARGIN, canvasWidth - PANEL_WIDTH - PANEL_MARGIN)),
-    y: clamp(Math.max(viewportY + PANEL_MARGIN, PANEL_SAFE_TOP), PANEL_SAFE_TOP, Math.max(PANEL_SAFE_TOP, canvasHeight - 220))
+    x: Math.round(viewportX + PANEL_MARGIN),
+    y: Math.round(viewportY + PANEL_MARGIN)
   };
 }
 
@@ -1321,8 +1358,7 @@ function createPanelElement(panel, index) {
   const captionInput = fragment.querySelector(".caption-input");
 
   card.dataset.panelId = panel.id;
-  card.style.left = `${panel.x}px`;
-  card.style.top = `${panel.y}px`;
+  positionCardElement(card, panel.x, panel.y);
   card.style.zIndex = String(panel.z);
   card.classList.toggle("is-selected", selectedPanelIds.has(panel.id));
   title.textContent = `컷 ${index + 1}`;
@@ -1628,16 +1664,15 @@ function handleCardDragMove(event) {
   }
 
   dragState.items.forEach((item) => {
-    const nextX = clamp(item.startX + deltaX, PANEL_MARGIN, Math.max(PANEL_MARGIN, canvasWidth - item.width - PANEL_MARGIN));
-    const nextY = clamp(item.startY + deltaY, PANEL_SAFE_TOP, Math.max(PANEL_SAFE_TOP, canvasHeight - item.height - PANEL_MARGIN));
+    const nextX = item.startX + deltaX;
+    const nextY = item.startY + deltaY;
 
     setPanelFields(item.id, {
       x: Math.round(nextX),
       y: Math.round(nextY)
     });
 
-    item.card.style.left = `${Math.round(nextX)}px`;
-    item.card.style.top = `${Math.round(nextY)}px`;
+    positionCardElement(item.card, nextX, nextY);
   });
 
   dragState.moved = true;
@@ -1851,16 +1886,16 @@ function handlePinchMove(event) {
   const deltaMidX = midX - pinchState.startMidX;
   const deltaMidY = midY - pinchState.startMidY;
 
-  // Content point under the initial pinch midpoint
-  const contentX = (pinchState.startScrollLeft + pinchState.anchorLocalX) / pinchState.startZoom;
-  const contentY = (pinchState.startScrollTop + pinchState.anchorLocalY) / pinchState.startZoom;
+  // World point under the initial pinch midpoint
+  const worldX = canvasToWorldX((pinchState.startScrollLeft + pinchState.anchorLocalX) / pinchState.startZoom);
+  const worldY = canvasToWorldY((pinchState.startScrollTop + pinchState.anchorLocalY) / pinchState.startZoom);
 
   zoom = targetZoom;
   updateZoomUI();
   updateCanvasMetrics();
 
-  canvasViewport.scrollLeft = contentX * targetZoom - pinchState.anchorLocalX - deltaMidX;
-  canvasViewport.scrollTop = contentY * targetZoom - pinchState.anchorLocalY - deltaMidY;
+  canvasViewport.scrollLeft = worldToCanvasX(worldX) * targetZoom - pinchState.anchorLocalX - deltaMidX;
+  canvasViewport.scrollTop = worldToCanvasY(worldY) * targetZoom - pinchState.anchorLocalY - deltaMidY;
 
   clampViewportScroll();
   scheduleViewStateSave();
@@ -2032,17 +2067,17 @@ function setZoom(nextZoom, anchor = {}) {
   }
 
   const rect = canvasViewport.getBoundingClientRect();
-  const localX = anchor.clientX ? anchor.clientX - rect.left : rect.width / 2;
-  const localY = anchor.clientY ? anchor.clientY - rect.top : rect.height / 2;
-  const contentX = anchor.contentX ?? (canvasViewport.scrollLeft + localX) / zoom;
-  const contentY = anchor.contentY ?? (canvasViewport.scrollTop + localY) / zoom;
+  const localX = anchor.clientX != null ? anchor.clientX - rect.left : rect.width / 2;
+  const localY = anchor.clientY != null ? anchor.clientY - rect.top : rect.height / 2;
+  const worldX = anchor.contentX ?? canvasToWorldX((canvasViewport.scrollLeft + localX) / zoom);
+  const worldY = anchor.contentY ?? canvasToWorldY((canvasViewport.scrollTop + localY) / zoom);
 
   zoom = targetZoom;
   updateZoomUI();
   updateCanvasMetrics();
 
-  canvasViewport.scrollLeft = contentX * zoom - localX;
-  canvasViewport.scrollTop = contentY * zoom - localY;
+  canvasViewport.scrollLeft = worldToCanvasX(worldX) * zoom - localX;
+  canvasViewport.scrollTop = worldToCanvasY(worldY) * zoom - localY;
 
   clampViewportScroll();
   scheduleViewStateSave();
@@ -2142,9 +2177,22 @@ function updateCanvasMetrics() {
   const viewportWidth = canvasViewport.clientWidth || window.innerWidth;
   const viewportHeight = canvasViewport.clientHeight || window.innerHeight;
   const bounds = getContentBounds();
+  const previousOriginX = canvasOriginX;
+  const previousOriginY = canvasOriginY;
 
-  canvasWidth = Math.max(DEFAULT_CANVAS_WIDTH, Math.ceil(bounds.maxX + PANEL_MARGIN), Math.ceil(viewportWidth / zoom));
-  canvasHeight = Math.max(DEFAULT_CANVAS_HEIGHT, Math.ceil(bounds.maxY + PANEL_MARGIN), Math.ceil(viewportHeight / zoom));
+  canvasOriginX = bounds.minX < 0 ? Math.floor(bounds.minX - CANVAS_EDGE_PADDING_X) : 0;
+  canvasOriginY = bounds.minY < 0 ? Math.floor(bounds.minY - CANVAS_EDGE_PADDING_Y) : 0;
+
+  canvasWidth = Math.max(
+    DEFAULT_CANVAS_WIDTH,
+    Math.ceil(bounds.maxX - canvasOriginX + CANVAS_EDGE_PADDING_X),
+    Math.ceil(viewportWidth / zoom)
+  );
+  canvasHeight = Math.max(
+    DEFAULT_CANVAS_HEIGHT,
+    Math.ceil(bounds.maxY - canvasOriginY + CANVAS_EDGE_PADDING_Y),
+    Math.ceil(viewportHeight / zoom)
+  );
 
   board.style.width = `${canvasWidth}px`;
   board.style.height = `${canvasHeight}px`;
@@ -2152,6 +2200,12 @@ function updateCanvasMetrics() {
   boardSizer.style.width = `${Math.ceil(canvasWidth * zoom)}px`;
   boardSizer.style.height = `${Math.ceil(canvasHeight * zoom)}px`;
 
+  if (previousOriginX !== canvasOriginX || previousOriginY !== canvasOriginY) {
+    canvasViewport.scrollLeft += Math.round((previousOriginX - canvasOriginX) * zoom);
+    canvasViewport.scrollTop += Math.round((previousOriginY - canvasOriginY) * zoom);
+  }
+
+  syncBoardCardPositions();
   clampViewportScroll();
 }
 
@@ -2164,22 +2218,35 @@ function clampViewportScroll() {
 }
 
 function getContentBounds() {
-  const cards = board.querySelectorAll(".story-card");
-  let maxX = DEFAULT_CANVAS_WIDTH;
-  let maxY = DEFAULT_CANVAS_HEIGHT;
+  if (panels.length === 0) {
+    return {
+      minX: 0,
+      minY: 0,
+      maxX: DEFAULT_CANVAS_WIDTH,
+      maxY: DEFAULT_CANVAS_HEIGHT
+    };
+  }
 
-  cards.forEach((card) => {
-    const left = parseFloat(card.style.left) || 0;
-    const top = parseFloat(card.style.top) || 0;
-    maxX = Math.max(maxX, left + card.offsetWidth + PANEL_MARGIN);
-    maxY = Math.max(maxY, top + card.offsetHeight + PANEL_MARGIN);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  panels.forEach((panel) => {
+    const card = board.querySelector(`[data-panel-id="${panel.id}"]`);
+    const width = card?.offsetWidth ?? PANEL_WIDTH;
+    const height = card?.offsetHeight ?? PANEL_HEIGHT_FALLBACK;
+    minX = Math.min(minX, panel.x);
+    minY = Math.min(minY, panel.y);
+    maxX = Math.max(maxX, panel.x + width);
+    maxY = Math.max(maxY, panel.y + height);
   });
 
   return {
-    minX: 0,
-    minY: 0,
-    maxX,
-    maxY
+    minX: Number.isFinite(minX) ? minX : 0,
+    minY: Number.isFinite(minY) ? minY : 0,
+    maxX: Number.isFinite(maxX) ? maxX : DEFAULT_CANVAS_WIDTH,
+    maxY: Number.isFinite(maxY) ? maxY : DEFAULT_CANVAS_HEIGHT
   };
 }
 
@@ -2245,8 +2312,8 @@ function duplicatePanels(panelIds) {
   const clones = sourcePanels.map((panel, index) => ({
     ...panel,
     id: createId(),
-    x: clamp(panel.x + NEW_PANEL_OFFSET, PANEL_MARGIN, Math.max(PANEL_MARGIN, canvasWidth - PANEL_WIDTH - PANEL_MARGIN)),
-    y: clamp(panel.y + NEW_PANEL_OFFSET, PANEL_SAFE_TOP, Math.max(PANEL_SAFE_TOP, canvasHeight - 220)),
+    x: panel.x + NEW_PANEL_OFFSET,
+    y: panel.y + NEW_PANEL_OFFSET,
     z: zBase + index
   }));
 
@@ -2312,12 +2379,11 @@ function nudgeSelection(fallbackPanelId, deltaX, deltaY) {
       return;
     }
 
-    const nextX = clamp(panel.x + deltaX, PANEL_MARGIN, Math.max(PANEL_MARGIN, canvasWidth - card.offsetWidth - PANEL_MARGIN));
-    const nextY = clamp(panel.y + deltaY, PANEL_SAFE_TOP, Math.max(PANEL_SAFE_TOP, canvasHeight - card.offsetHeight - PANEL_MARGIN));
+    const nextX = panel.x + deltaX;
+    const nextY = panel.y + deltaY;
 
     setPanelFields(id, { x: nextX, y: nextY });
-    card.style.left = `${nextX}px`;
-    card.style.top = `${nextY}px`;
+    positionCardElement(card, nextX, nextY);
   });
 
   persistPanels();
@@ -2341,11 +2407,11 @@ function focusPanel(panelId) {
   const viewportRect = canvasViewport.getBoundingClientRect();
 
   if (cardRect.right > viewportRect.right || cardRect.left < viewportRect.left) {
-    canvasViewport.scrollLeft = panel.x * zoom - 40;
+    canvasViewport.scrollLeft = worldToCanvasX(panel.x) * zoom - 40;
   }
 
   if (cardRect.bottom > viewportRect.bottom || cardRect.top < viewportRect.top) {
-    canvasViewport.scrollTop = panel.y * zoom - 40;
+    canvasViewport.scrollTop = worldToCanvasY(panel.y) * zoom - 40;
   }
 
   const handle = card.querySelector(".panel-handle");
