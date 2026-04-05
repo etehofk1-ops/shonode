@@ -82,6 +82,14 @@
   const previewVideoEl = document.getElementById("previewVideo");
   const previewVideoEmptyEl = document.getElementById("previewVideoEmpty");
   const connectionLayerEl = document.getElementById("connectionLayer");
+  const openOnboardingButtonEl = document.getElementById("openOnboardingButton");
+  const mobileOnboardingButtonEl = document.getElementById("mobileOnboardingButton");
+  const onboardingDialogEl = document.getElementById("onboardingDialog");
+  const onboardingDialogPanelEl = document.getElementById("onboardingDialogPanel");
+  const onboardingDialogBackdropEl = document.getElementById("onboardingDialogBackdrop");
+  const onboardingDialogCloseEl = document.getElementById("onboardingDialogClose");
+  const onboardingDismissButtonEl = document.getElementById("onboardingDismissButton");
+  const onboardingStartButtonEl = document.getElementById("onboardingStartButton");
   const aiSidebarCardEl = projectSidebarEl?.querySelector('[data-sidebar-section="ai"]');
   const leftSidebarSections = Array.from(projectSidebarEl?.querySelectorAll("[data-sidebar-section]") ?? []);
   const rightSidebarSections = Array.from(previewSidebarEl?.querySelectorAll("[data-sidebar-section]") ?? []);
@@ -124,6 +132,7 @@
   let workspaceLibrarySyncTimeoutId = null;
   let workspaceLibrarySyncPromise = Promise.resolve();
   let workspaceImportInFlight = false;
+  let onboardingLastActiveElement = null;
 
   getDefaultProject = function overrideDefaultProject() {
     return {
@@ -722,6 +731,20 @@
     setSidebarSections("right", activeRightSidebarSections.length > 0 ? [] : ["video"], false);
   });
   window.addEventListener("keydown", handleLinkKeyDown);
+  window.addEventListener("keydown", handleOnboardingKeyDown, true);
+  openOnboardingButtonEl?.addEventListener("click", () => {
+    openOnboardingDialog({ announce: true });
+  });
+  mobileOnboardingButtonEl?.addEventListener("click", () => {
+    if (typeof closeMobileDrawer === "function") {
+      closeMobileDrawer();
+    }
+    openOnboardingDialog({ announce: true });
+  });
+  onboardingDialogBackdropEl?.addEventListener("click", () => closeOnboardingDialog());
+  onboardingDialogCloseEl?.addEventListener("click", () => closeOnboardingDialog());
+  onboardingDismissButtonEl?.addEventListener("click", () => closeOnboardingDialog());
+  onboardingStartButtonEl?.addEventListener("click", startOnboardingFlow);
   initializeSidebarRails();
   initializeReferenceImages();
 
@@ -744,6 +767,7 @@
   syncConnectionLayer();
   renderPanels({ restoreView: true });
   initializeWorkspaceLibrary();
+  maybeOpenOnboarding();
 
   function bindProjectField(element, fieldName) {
     if (!element) {
@@ -780,6 +804,146 @@
     element.addEventListener("blur", () => {
       releaseHistoryGroup(historyKey);
     });
+  }
+
+  function handleOnboardingKeyDown(event) {
+    if (!isOnboardingOpen()) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeOnboardingDialog();
+      return;
+    }
+
+    if (event.key === "Tab") {
+      trapOnboardingFocus(event);
+    }
+  }
+
+  function isOnboardingOpen() {
+    return Boolean(onboardingDialogEl && !onboardingDialogEl.hidden);
+  }
+
+  function hasSeenOnboarding() {
+    return window.localStorage.getItem("shonode-onboarding-seen-v1") === "true";
+  }
+
+  function markOnboardingSeen() {
+    window.localStorage.setItem("shonode-onboarding-seen-v1", "true");
+  }
+
+  function hasSavedWorkspaceState() {
+    return Boolean(
+      window.localStorage.getItem(STORAGE_KEY) ||
+      window.localStorage.getItem(PROJECT_STORAGE_KEY) ||
+      window.localStorage.getItem(VIEW_STORAGE_KEY)
+    );
+  }
+
+  function maybeOpenOnboarding() {
+    if (!onboardingDialogEl || hasSeenOnboarding() || hasSavedWorkspaceState()) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      openOnboardingDialog({ announce: false, restoreFocus: false });
+    }, 360);
+  }
+
+  function openOnboardingDialog(options = {}) {
+    if (!onboardingDialogEl || !onboardingDialogPanelEl) {
+      return;
+    }
+
+    if (isOnboardingOpen()) {
+      return;
+    }
+
+    if (options.restoreFocus !== false) {
+      onboardingLastActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    } else {
+      onboardingLastActiveElement = null;
+    }
+
+    onboardingDialogEl.hidden = false;
+    onboardingDialogEl.setAttribute("aria-hidden", "false");
+    document.body.classList.add("is-onboarding-open");
+
+    window.setTimeout(() => {
+      (onboardingStartButtonEl || onboardingDialogCloseEl || onboardingDialogPanelEl).focus();
+    }, 0);
+
+    if (options.announce) {
+      setStatus("슈노드 온보딩을 열었습니다.");
+    }
+  }
+
+  function closeOnboardingDialog(options = {}) {
+    if (!isOnboardingOpen()) {
+      return;
+    }
+
+    onboardingDialogEl.hidden = true;
+    onboardingDialogEl.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("is-onboarding-open");
+    markOnboardingSeen();
+
+    const returnFocusTarget = options.restoreFocus === false ? null : onboardingLastActiveElement;
+    onboardingLastActiveElement = null;
+
+    if (returnFocusTarget instanceof HTMLElement) {
+      returnFocusTarget.focus();
+    }
+  }
+
+  function trapOnboardingFocus(event) {
+    if (!onboardingDialogPanelEl) {
+      return;
+    }
+
+    const focusableElements = Array.from(
+      onboardingDialogPanelEl.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((element) => element.offsetParent !== null);
+
+    if (focusableElements.length === 0) {
+      event.preventDefault();
+      return;
+    }
+
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements[focusableElements.length - 1];
+
+    if (event.shiftKey && document.activeElement === firstFocusable) {
+      event.preventDefault();
+      lastFocusable.focus();
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === lastFocusable) {
+      event.preventDefault();
+      firstFocusable.focus();
+    }
+  }
+
+  function startOnboardingFlow() {
+    closeOnboardingDialog({ restoreFocus: false });
+    setSidebarSections("left", Array.from(new Set([...activeLeftSidebarSections, "ai"])), false);
+    applySidebarRailState(false);
+    if (typeof closeMobileDrawer === "function") {
+      closeMobileDrawer();
+    }
+
+    window.setTimeout(() => {
+      aiBriefInputEl?.focus();
+      aiBriefInputEl?.select?.();
+    }, 80);
+
+    setStatus("AI 브리프부터 시작해보세요. 필요하면 레퍼런스 이미지를 먼저 올려도 됩니다.");
   }
 
   function sanitizePipelineIdeationMode(value) {
