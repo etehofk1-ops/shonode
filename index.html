@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shonode | 영화 콘티 보드</title>
+  <title>Shonode | 연출 설계 워크플로</title>
   <link rel="icon" href="brand/shonode-mark.svg">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,7 +15,7 @@
           <img class="brand-mark" src="brand/shonode-mark.svg" alt="" aria-hidden="true">
           <div class="brand-copy">
             <h1>Shonode</h1>
-            <p class="brand-tagline">컷을 연결해, 이야기를 설계하다.</p>
+            <p class="brand-tagline">컷을 연결해, 장면의 흐름을 설계하다.</p>
           </div>
         </button>
 
@@ -67,8 +67,11 @@
           </div>
         </div>
       </div>
+      <p class="hero-positioning">
+        프리비즈와 콘티 설계를 위한 창작 워크플로. 브리프에서 컷 구조, 연결, 프리뷰, 결과물 검토까지 한 화면에서 이어집니다.
+      </p>
       <p id="statusMessage" class="status-message sr-only" data-tone="neutral">
-        준비 완료. 브리프를 넣고 AI 콘티 초안을 생성해보세요.
+        준비 완료. 브리프를 넣고 컷 구조와 연출 흐름 초안을 설계해보세요.
       </p>
       <span id="panelCount" class="sr-only" aria-hidden="true">6</span>
       <button id="toggleHeaderButton" class="ghost-button toggle-header-button" type="button" aria-expanded="true" hidden>
@@ -83,12 +86,12 @@
       <nav id="leftSidebarRail" class="sidebar-rail sidebar-rail--left" aria-label="왼쪽 사이드바 레일">
         <div class="sidebar-rail-track">
           <div class="sidebar-rail-buttons">
-            <button class="sidebar-rail-button" type="button" data-sidebar-side="left" data-sidebar-target="ai" data-sidebar-label="AI 디렉터" aria-label="AI 디렉터 패널 열기" title="AI 디렉터">
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="left" data-sidebar-target="ai" data-sidebar-label="연출 설계" aria-label="연출 설계 패널 열기" title="연출 설계">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 3.5L14.35 8.65L19.5 11L14.35 13.35L12 18.5L9.65 13.35L4.5 11L9.65 8.65Z"></path>
                 <path d="M18.5 4.5L19.35 6.15L21 7L19.35 7.85L18.5 9.5L17.65 7.85L16 7L17.65 6.15Z"></path>
               </svg>
-              <span class="sr-only">AI 디렉터</span>
+              <span class="sr-only">연출 설계</span>
             </button>
             <button class="sidebar-rail-button" type="button" data-sidebar-side="left" data-sidebar-target="guide" data-sidebar-label="가이드" aria-label="가이드 패널 열기" title="가이드">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -136,9 +139,9 @@
           </div>
           <section class="sidebar-card sidebar-card--ai" data-sidebar-section="ai">
             <div class="sidebar-card-header">
-              <p class="sidebar-eyebrow">AI Director</p>
-              <h2>브리프에서 컷 생성</h2>
-              <p class="sidebar-card-copy">두루뭉실한 설명도 컷 수와 첨부 이미지 기반 I2I, I2V 흐름 초안으로 정리합니다.</p>
+              <p class="sidebar-eyebrow">Direction Workflow</p>
+              <h2>브리프에서 컷 구조 설계</h2>
+              <p class="sidebar-card-copy">브리프와 레퍼런스를 바탕으로 장면 흐름, 컷 목적, 실행 프롬프트의 뼈대를 정리합니다.</p>
             </div>
 
             <label class="sidebar-field">
@@ -161,7 +164,7 @@
                 <input id="aiReferenceInput" type="file" accept="image/*" multiple hidden>
                 <div class="ai-reference-dropzone__copy">
                   <strong>이미지 드래그 또는 클릭</strong>
-                  <p>첨부 이미지를 최대 10장까지 넣고, 그 이미지를 바탕으로 컷별 I2I와 I2V 초안을 생성합니다.</p>
+                  <p>첨부 이미지를 최대 10장까지 넣고, 그 이미지를 바탕으로 컷별 I2I와 I2V 초안을 정리합니다.</p>
                 </div>
                 <div id="aiReferenceInlineGrid" class="ai-reference-inline-grid" hidden></div>
               </label>
@@ -171,7 +174,7 @@
 
             <div class="sidebar-grid sidebar-grid--ai">
               <label class="sidebar-field">
-                <span class="sidebar-label">AI 모델 메모</span>
+                <span class="sidebar-label">모델 메모</span>
                 <input id="aiModelInput" class="sidebar-input" type="text" value="Gemini 2.5 Flash">
               </label>
 
@@ -200,7 +203,7 @@
                   <path d="M12 4V20M4 12H20"></path>
                 </svg>
               </span>
-              <span id="generatePlanButtonLabel">AI 콘티 초안 생성</span>
+              <span id="generatePlanButtonLabel">연출 보드 초안 생성</span>
             </button>
 
             <div id="aiGenerationIndicator" class="ai-generation-indicator" hidden aria-live="polite">
@@ -213,16 +216,16 @@
               </div>
               <div class="ai-generation-copy">
                 <strong id="aiGenerationStage">브리프 해석 중</strong>
-                <p id="aiGenerationHint">컷 흐름과 프롬프트를 조립하고 있습니다.</p>
+                <p id="aiGenerationHint">컷 목적과 연결 흐름을 조립하고 있습니다.</p>
               </div>
             </div>
 
-            <p id="aiPlanMeta" class="sidebar-meta-text">브리프를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.</p>
+            <p id="aiPlanMeta" class="sidebar-meta-text">브리프를 넣으면 장면 흐름, 컷 구조, 프롬프트 베이스가 카드로 펼쳐집니다.</p>
             <div id="pipelinePromptLab" class="pipeline-lab">
               <div class="pipeline-lab-header">
-                <p class="sidebar-eyebrow">Pipeline</p>
-                <h3>5단계 생성 워크플로우</h3>
-                <p class="pipeline-lab-copy">기본 이미지에서 다각도, 표정, 콘티 아이디어, I2V까지 지금 쓰는 생성 흐름을 한 번에 정리합니다.</p>
+                <p class="sidebar-eyebrow">Workflow</p>
+                <h3>5단계 연출 설계 워크플로</h3>
+                <p class="pipeline-lab-copy">키비주얼, 멀티 앵글, 표정, 씬 아이데이션, 영상 실행 프롬프트까지 컷 설계를 한 흐름으로 정리합니다.</p>
               </div>
 
               <div id="pipelineTargetMeta" class="pipeline-target-meta">현재 타깃: 프로젝트 전체 브리프</div>
@@ -267,14 +270,14 @@
                   <div class="pipeline-stage-header">
                     <div>
                       <span class="pipeline-stage-index">Step 1</span>
-                      <strong class="pipeline-stage-title">기본 이미지 T2I</strong>
+                      <strong class="pipeline-stage-title">마스터 키비주얼 T2I</strong>
                     </div>
                     <div class="pipeline-stage-actions">
                       <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep1Output" data-copy-label="Step 1 T2I">복사</button>
                       <button class="secondary-button pipeline-apply-button" type="button" data-pipeline-apply="step1">선택 컷 적용</button>
                     </div>
                   </div>
-                  <p class="pipeline-stage-copy">첫 시드 이미지를 만드는 프롬프트입니다.</p>
+                  <p class="pipeline-stage-copy">장면 전체의 기준이 되는 첫 키비주얼 프롬프트입니다.</p>
                   <textarea id="pipelineStep1Output" class="pipeline-output" rows="6" readonly></textarea>
                 </article>
 
@@ -282,11 +285,11 @@
                   <div class="pipeline-stage-header">
                     <div>
                       <span class="pipeline-stage-index">Step 2</span>
-                      <strong class="pipeline-stage-title">다각도 그리드 I2I</strong>
+                      <strong class="pipeline-stage-title">멀티 앵글 시트 I2I</strong>
                     </div>
                     <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep2Output" data-copy-label="Step 2 I2I grid">복사</button>
                   </div>
-                  <p class="pipeline-stage-copy">Step 1 결과 이미지를 기준으로 다각도 시트를 만드는 프롬프트입니다.</p>
+                  <p class="pipeline-stage-copy">같은 피사체의 각도 기준을 고정하는 시트 프롬프트입니다.</p>
                   <textarea id="pipelineStep2Output" class="pipeline-output" rows="6" readonly></textarea>
                 </article>
 
@@ -298,7 +301,7 @@
                     </div>
                     <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep3Output" data-copy-label="Step 3 expression sheet">복사</button>
                   </div>
-                  <p class="pipeline-stage-copy">Step 1 결과 이미지를 기준으로 9가지 표정 시트를 만드는 프롬프트입니다.</p>
+                  <p class="pipeline-stage-copy">감정선과 표정 범위를 정리하는 9칸 시트 프롬프트입니다.</p>
                   <textarea id="pipelineStep3Output" class="pipeline-output" rows="6" readonly></textarea>
                 </article>
 
@@ -306,11 +309,11 @@
                   <div class="pipeline-stage-header">
                     <div>
                       <span class="pipeline-stage-index">Step 4</span>
-                      <strong class="pipeline-stage-title">콘티 아이데이션 <span id="pipelineStep4ModeLabel" class="pipeline-stage-mode">I2T</span></strong>
+                      <strong class="pipeline-stage-title">씬 구조 설계 <span id="pipelineStep4ModeLabel" class="pipeline-stage-mode">I2T</span></strong>
                     </div>
                     <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep4Output" data-copy-label="Step 4 storyboard ideation">복사</button>
                   </div>
-                  <p class="pipeline-stage-copy">다각도 시트와 표정 시트를 붙여 콘티 방향을 정리하는 프롬프트입니다.</p>
+                  <p class="pipeline-stage-copy">시트와 브리프를 바탕으로 샷 목적과 연결 구조를 정리하는 프롬프트입니다.</p>
                   <textarea id="pipelineStep4Output" class="pipeline-output" rows="8" readonly></textarea>
                 </article>
 
@@ -318,14 +321,14 @@
                   <div class="pipeline-stage-header">
                     <div>
                       <span class="pipeline-stage-index">Step 5</span>
-                      <strong class="pipeline-stage-title">I2V 제작 <span id="pipelineStep5ModeLabel" class="pipeline-stage-mode">Start / End</span></strong>
+                      <strong class="pipeline-stage-title">I2V 실행 프롬프트 <span id="pipelineStep5ModeLabel" class="pipeline-stage-mode">Start / End</span></strong>
                     </div>
                     <div class="pipeline-stage-actions">
                       <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep5Output" data-copy-label="Step 5 I2V">복사</button>
                       <button class="secondary-button pipeline-apply-button" type="button" data-pipeline-apply="step5">선택 컷 적용</button>
                     </div>
                   </div>
-                  <p class="pipeline-stage-copy">확정된 콘티와 시트를 바탕으로 I2V 제작용 프롬프트를 정리합니다.</p>
+                  <p class="pipeline-stage-copy">확정된 콘티를 바탕으로 실제 영상 생성에 넣을 실행 프롬프트를 정리합니다.</p>
                   <textarea id="pipelineStep5Output" class="pipeline-output" rows="9" readonly></textarea>
                 </article>
               </div>
@@ -471,7 +474,7 @@
                 <path d="M12 3.5L14.35 8.65L19.5 11L14.35 13.35L12 18.5L9.65 13.35L4.5 11L9.65 8.65Z"></path>
                 <path d="M18.5 4.5L19.35 6.15L21 7L19.35 7.85L18.5 9.5L17.65 7.85L16 7L17.65 6.15Z"></path>
               </svg>
-              <span>선택 재생성</span>
+              <span>선택 다시 정리</span>
             </button>
 
             <button id="deleteSelectionButton" class="danger-button tool-button" type="button" disabled>
@@ -586,13 +589,13 @@
               </svg>
               <span class="sr-only">비디오</span>
             </button>
-            <button class="sidebar-rail-button" type="button" data-sidebar-side="right" data-sidebar-target="output" data-sidebar-label="AI 아웃풋" aria-label="AI 아웃풋 패널 열기" title="AI 아웃풋">
+            <button class="sidebar-rail-button" type="button" data-sidebar-side="right" data-sidebar-target="output" data-sidebar-label="연출 정리" aria-label="연출 정리 패널 열기" title="연출 정리">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 4.25L13.85 8.15L17.75 10L13.85 11.85L12 15.75L10.15 11.85L6.25 10L10.15 8.15Z"></path>
                 <path d="M7 17H11"></path>
                 <path d="M13 17H17"></path>
               </svg>
-              <span class="sr-only">AI 아웃풋</span>
+              <span class="sr-only">연출 정리</span>
             </button>
             <button class="sidebar-rail-button" type="button" data-sidebar-side="right" data-sidebar-target="selection" data-sidebar-label="셀렉션" aria-label="셀렉션 패널 열기" title="셀렉션">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -623,8 +626,8 @@
           <section class="sidebar-card sidebar-card--preview" data-sidebar-section="video">
             <div class="sidebar-card-header">
               <p class="sidebar-eyebrow">Video</p>
-              <h2>결과 영상 확인</h2>
-              <p class="sidebar-card-copy">API가 만든 결과 영상 URL을 넣으면 바로 재생할 수 있습니다.</p>
+              <h2>결과 영상 검토</h2>
+              <p class="sidebar-card-copy">외부 모델에서 만든 결과 영상 URL을 넣고 컷 연결감과 흐름을 바로 점검할 수 있습니다.</p>
             </div>
 
             <label class="sidebar-field">
@@ -639,17 +642,17 @@
 
             <div class="preview-player-shell">
               <video id="previewVideo" class="preview-video" controls playsinline></video>
-              <div id="previewVideoEmpty" class="preview-video-empty">영상 URL을 넣으면 이 자리에서 결과를 볼 수 있습니다.</div>
+              <div id="previewVideoEmpty" class="preview-video-empty">영상 URL을 넣으면 이 자리에서 결과를 검토할 수 있습니다.</div>
             </div>
           </section>
 
           <section class="sidebar-card" data-sidebar-section="output">
             <div class="sidebar-card-header">
-              <p class="sidebar-eyebrow">AI Output</p>
-              <h2>생성된 초안</h2>
+              <p class="sidebar-eyebrow">Direction Output</p>
+              <h2>연출 정리</h2>
             </div>
 
-            <p id="aiSummaryOutput" class="ai-summary-output">브리프를 넣고 생성하면 전체 연출 방향이 여기에 정리됩니다.</p>
+            <p id="aiSummaryOutput" class="ai-summary-output">브리프를 넣고 구조를 만들면 전체 연출 방향이 여기에 정리됩니다.</p>
             <div id="aiSequenceOutput" class="ai-sequence-output"></div>
           </section>
 
@@ -674,12 +677,12 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V19M5 12H19"></path></svg>
         <span>새 컷</span>
       </button>
-      <button id="tabAI" class="mobile-tab-item" type="button" aria-label="AI 디렉터">
+      <button id="tabAI" class="mobile-tab-item" type="button" aria-label="연출 설계">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3.5L14.35 8.65L19.5 11L14.35 13.35L12 18.5L9.65 13.35L4.5 11L9.65 8.65Z"></path>
           <path d="M18.5 4.5L19.35 6.15L21 7L19.35 7.85L18.5 9.5L17.65 7.85L16 7L17.65 6.15Z"></path>
         </svg>
-        <span>AI</span>
+        <span>설계</span>
       </button>
       <button id="tabTimeline" class="mobile-tab-item" type="button" aria-label="타임라인">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -856,7 +859,7 @@
 
       <div class="panel-flow-row">
         <span class="flow-chip">연결 <strong class="panel-next-count">0</strong></span>
-        <span class="flow-chip flow-chip--soft">AI 컷</span>
+        <span class="flow-chip flow-chip--soft">설계 컷</span>
         <button class="subtle-button clear-links-button" type="button" hidden>연결 지우기</button>
       </div>
 
@@ -917,36 +920,36 @@
     >
       <div class="onboarding-dialog-header">
         <div class="onboarding-dialog-copy">
-          <p class="onboarding-dialog-eyebrow">Welcome</p>
-          <h2 id="onboardingDialogTitle" class="onboarding-dialog-title">슈노드 시작 흐름을 한 번에 익혀보세요</h2>
+          <p class="onboarding-dialog-eyebrow">Workflow</p>
+          <h2 id="onboardingDialogTitle" class="onboarding-dialog-title">슈노드로 프리비즈와 콘티 흐름을 설계하세요</h2>
           <p id="onboardingDialogDescription" class="onboarding-dialog-description">
-            브리프에서 콘티, T2I / I2I / I2V 프롬프트까지 이어지는 현재 슈노드 작업 흐름을 기준으로 빠르게 시작할 수 있게 정리했습니다.
+            슈노드는 이미지를 많이 뽑는 툴보다, 브리프에서 컷 구조를 세우고 연결과 프리뷰로 흐름을 검토하는 연출 설계 워크플로입니다.
           </p>
         </div>
         <button id="onboardingDialogClose" class="ghost-button onboarding-dialog-close" type="button" aria-label="온보딩 닫기">닫기</button>
       </div>
 
       <div class="onboarding-pill-row" aria-hidden="true">
-        <span class="onboarding-pill">브리프 기반 콘티</span>
-        <span class="onboarding-pill">T2I / I2I / I2V 파이프라인</span>
-        <span class="onboarding-pill">컷 연결 + 저장</span>
+        <span class="onboarding-pill">브리프 → 컷 구조</span>
+        <span class="onboarding-pill">씬 연결 + 프리뷰</span>
+        <span class="onboarding-pill">실행 프롬프트 정리</span>
       </div>
 
       <div class="onboarding-highlight-grid">
         <article class="onboarding-highlight-card">
           <span class="onboarding-highlight-index">01</span>
-          <strong>AI Director에서 시작</strong>
-          <p>브리프, 레퍼런스 이미지, 피사체와 룩을 입력하면 슈노드가 컷 흐름과 프롬프트 베이스를 잡아줍니다.</p>
+          <strong>브리프에서 연출 구조 시작</strong>
+          <p>브리프, 레퍼런스, 피사체와 룩을 입력하면 슈노드가 컷 흐름과 프롬프트 베이스를 정리합니다.</p>
         </article>
         <article class="onboarding-highlight-card">
           <span class="onboarding-highlight-index">02</span>
-          <strong>5단계 파이프라인으로 확장</strong>
-          <p>기본 이미지, 다각도 그리드, 표정 시트, 콘티 아이디어, I2V 프롬프트까지 한 섹션에서 이어서 정리할 수 있습니다.</p>
+          <strong>씬과 컷을 연결</strong>
+          <p>컷 목적을 메모하고 연결선을 이어서 장면 흐름과 전환 순서를 한눈에 다듬을 수 있습니다.</p>
         </article>
         <article class="onboarding-highlight-card">
           <span class="onboarding-highlight-index">03</span>
-          <strong>컷 카드에 바로 적용</strong>
-          <p>선택한 컷에 Step 1 / Step 5 프롬프트를 바로 밀어 넣고, 연결선과 타임라인으로 영상 흐름을 다듬을 수 있습니다.</p>
+          <strong>실행 프롬프트까지 정리</strong>
+          <p>키비주얼, 멀티 앵글, 표정 시트, I2V 프롬프트까지 같은 보드 안에서 정리해 제작 흐름을 이어갑니다.</p>
         </article>
       </div>
 
@@ -954,17 +957,18 @@
         <section class="onboarding-section">
           <h3>추천 작업 순서</h3>
           <ol class="onboarding-flow-list">
-            <li>브리프와 레퍼런스를 먼저 넣고, 피사체와 룩&스타일을 간단히 적습니다.</li>
-            <li>Step 1로 베이스 T2I 이미지를 만들고, 필요하면 선택 컷에 바로 적용합니다.</li>
-            <li>Step 2와 Step 3으로 다각도 그리드와 표정 시트를 준비합니다.</li>
-            <li>Step 4에서 콘티 아이디어를 정리하고, 컷 카드 설명과 프롬프트를 다듬습니다.</li>
-            <li>Step 5에서 Start / Motion / End 또는 Omni 기반 I2V 프롬프트를 완성합니다.</li>
+            <li>브리프와 레퍼런스를 먼저 넣고, 피사체와 룩, 만들고 싶은 영상 목표를 적습니다.</li>
+            <li>Step 1로 마스터 키비주얼을 만들고 장면의 기준 이미지로 삼습니다.</li>
+            <li>Step 2와 Step 3으로 멀티 앵글과 표정 시트를 준비해 동일한 정체성을 고정합니다.</li>
+            <li>Step 4에서 샷 목적, 카메라 감각, 연결 구조를 정리하고 컷 설명을 다듬습니다.</li>
+            <li>Step 5에서 실제 영상 생성에 넣을 실행 프롬프트를 완성하고 결과 영상을 검토합니다.</li>
           </ol>
         </section>
 
         <section class="onboarding-section">
           <h3>편집 팁</h3>
           <ul class="onboarding-tip-list">
+            <li>컷 설명은 프롬프트보다 장면 목적과 감정선 중심으로 적을수록 다음 생성 단계가 더 안정됩니다.</li>
             <li>카드 오른쪽 포트에서 다음 카드로 드래그하면 흐름 연결이 만들어집니다.</li>
             <li><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>S</kbd>로 로컬 저장, <kbd>Shift</kbd>를 함께 누르면 `.shonode`로 내보낼 수 있습니다.</li>
             <li><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>D</kbd>는 선택 컷 복제, <kbd>Delete</kbd>는 선택 컷 제거입니다.</li>
@@ -975,7 +979,7 @@
 
       <div class="onboarding-dialog-actions">
         <button id="onboardingDismissButton" class="secondary-button" type="button">이제 괜찮아요</button>
-        <button id="onboardingStartButton" class="primary-button" type="button">AI 패널 열고 시작</button>
+        <button id="onboardingStartButton" class="primary-button" type="button">연출 패널 열고 시작</button>
       </div>
     </div>
   </div>

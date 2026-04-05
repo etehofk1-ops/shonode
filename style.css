@@ -146,6 +146,14 @@ button:active {
   letter-spacing: -0.01em;
 }
 
+.hero-positioning {
+  margin: 12px 4px 0;
+  max-width: 78ch;
+  color: var(--text-subtle);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
 .eyebrow {
   display: inline-flex;
   align-items: center;
@@ -3146,6 +3154,12 @@ button:disabled {
 
   .brand-tagline {
     font-size: 0.72rem;
+  }
+
+  .hero-positioning {
+    margin-top: 10px;
+    font-size: 0.82rem;
+    line-height: 1.55;
   }
 
   .primary-button,

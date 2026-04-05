@@ -877,7 +877,7 @@
     }, 0);
 
     if (options.announce) {
-      setStatus("슈노드 온보딩을 열었습니다.");
+      setStatus("슈노드 워크플로 가이드를 열었습니다.");
     }
   }
 
@@ -943,7 +943,7 @@
       aiBriefInputEl?.select?.();
     }, 80);
 
-    setStatus("AI 브리프부터 시작해보세요. 필요하면 레퍼런스 이미지를 먼저 올려도 됩니다.");
+    setStatus("브리프부터 시작해 장면 목적, 컷 구조, 레퍼런스를 차례대로 정리해보세요.");
   }
 
   function sanitizePipelineIdeationMode(value) {
@@ -2962,14 +2962,14 @@
     aiCutCountOutputEl.textContent = panels.length > 0 ? String(panels.length) : "-";
     if (project.aiBrief?.trim()) {
       const referenceMeta = aiReferenceImages.length > 0 ? ` · 레퍼런스 ${aiReferenceImages.length}장` : "";
-      aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 브리프 초안 준비 완료${referenceMeta}`;
+      aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 연출 초안 준비 완료${referenceMeta}`;
     } else {
-      aiPlanMetaEl.textContent = "브리프와 첨부 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
+      aiPlanMetaEl.textContent = "브리프와 첨부 이미지를 넣으면 장면 흐름, 컷 구조, 프롬프트 베이스가 카드로 펼쳐집니다.";
     }
 
     aiSummaryOutputEl.textContent = project.aiSummary?.trim()
       ? project.aiSummary
-      : "브리프를 넣고 생성하면 전체 연출 방향이 여기에 정리됩니다.";
+      : "브리프를 넣고 구조를 만들면 전체 연출 방향이 여기에 정리됩니다.";
 
     aiSequenceOutputEl.innerHTML = "";
     panels.forEach((panel, index) => {
@@ -3105,7 +3105,7 @@
 
     setGeneratingState(true);
     pushHistoryState();
-    setStatus("브리프를 분석해 컷 초안을 생성하고 있습니다.");
+    setStatus("브리프를 분석해 컷 구조 초안을 설계하고 있습니다.");
 
     try {
       const payload = {
@@ -3139,7 +3139,7 @@
 
       if (!plan) {
         plan = buildLocalStoryboardPlan(payload);
-        setStatus("AI 연결에 실패해 로컬 초안으로 대체했습니다.", "warning");
+        setStatus("모델 연결에 실패해 로컬 연출 초안으로 대체했습니다.", "warning");
       }
 
       applyStoryboardPlan(normalizePlan(plan, payload), source);
@@ -3152,16 +3152,16 @@
     if (aiReferenceImages.length > 0) {
       return [
         {
-          title: "첨부 이미지 분석 중",
-          hint: "업로드한 이미지를 읽고 유지할 요소와 바꿀 요소를 추출하고 있습니다."
+          title: "레퍼런스 해석 중",
+          hint: "업로드한 이미지에서 유지할 정체성과 변주 가능한 요소를 구분하고 있습니다."
         },
         {
-          title: "I2I 방향 정리 중",
-          hint: "기존 이미지에서 리디자인할 핵심 포인트를 I2T 프롬프트로 정리하고 있습니다."
+          title: "장면 구조 정리 중",
+          hint: "레퍼런스를 바탕으로 컷 역할과 시각 기준을 정리하고 있습니다."
         },
         {
-          title: "I2I·T2I·I2V 연결 중",
-          hint: "리디자인 결과가 이미지 생성과 영상 생성으로 자연스럽게 이어지도록 맞추고 있습니다."
+          title: "실행 프롬프트 연결 중",
+          hint: "키비주얼과 콘티가 이미지 생성, 영상 생성으로 자연스럽게 이어지도록 맞추고 있습니다."
         },
         {
           title: "보드 반영 준비 중",
@@ -3176,12 +3176,12 @@
         hint: "러닝타임과 장면 분위기를 읽어 핵심 컷 수를 계산하고 있습니다."
       },
       {
-        title: "컷 흐름 설계 중",
+        title: "컷 구조 설계 중",
         hint: "훅부터 엔드 프레임까지 이어지는 장면 순서를 정리하고 있습니다."
       },
       {
-        title: "프롬프트 조립 중",
-        hint: "I2T, T2I, I2V에 들어갈 프롬프트를 모델별 흐름으로 맞추고 있습니다."
+        title: "실행 프롬프트 정리 중",
+        hint: "I2T, T2I, I2V에 들어갈 프롬프트를 제작 흐름에 맞게 정리하고 있습니다."
       },
       {
         title: "보드 반영 준비 중",
@@ -3207,7 +3207,7 @@
   function setGeneratingState(nextState) {
     aiGenerating = nextState;
     generatePlanButtonEl.disabled = nextState;
-    generatePlanButtonLabelEl.textContent = nextState ? "생성 중..." : "AI 콘티 초안 생성";
+    generatePlanButtonLabelEl.textContent = nextState ? "구조 설계 중..." : "연출 보드 초안 생성";
     generatePlanButtonEl.classList.toggle("is-generating", nextState);
     generatePlanButtonEl.setAttribute("aria-busy", String(nextState));
     if (aiGenerationIndicatorEl) {
@@ -3240,7 +3240,7 @@
     return {
       summary: typeof rawPlan?.summary === "string" && rawPlan.summary.trim()
         ? rawPlan.summary.trim()
-        : "브리프를 기반으로 컷 흐름과 생성 프롬프트 초안을 만들었습니다.",
+        : "브리프를 기반으로 컷 흐름과 실행 프롬프트 초안을 정리했습니다.",
       previewVideoUrl: typeof rawPlan?.previewVideoUrl === "string" ? rawPlan.previewVideoUrl : "",
       previewPosterUrl: typeof rawPlan?.previewPosterUrl === "string" ? rawPlan.previewPosterUrl : "",
       projectDraft,
@@ -3302,14 +3302,14 @@
       sequence: "Scene 01",
       runtime: runtimeText,
       tone,
-      logline: `${runtimeText} 안에 브랜드의 태도와 감도를 또렷하게 보여주는 ${cutCount}컷 광고 콘티.`,
-      notes: `${cutCount}컷 기준으로 훅, 디테일, 움직임, 엔드 프레임 순서로 구성합니다. 카메라는 절제된 이동을 유지하고, 감정선은 차분하지만 강한 인상을 남기며, 색감은 브랜드 무드에 맞춰 정리합니다.`
+      logline: `${runtimeText} 안에 브랜드의 태도와 감도를 또렷하게 보여주는 ${cutCount}컷 연출 보드.`,
+      notes: `${cutCount}컷 기준으로 훅, 디테일, 움직임, 엔드 프레임 순서로 구성합니다. 각 컷의 목적이 분명하게 보이도록 장면 전환을 설계하고, 카메라는 절제된 이동을 유지하며, 색감은 브랜드 무드에 맞춰 정리합니다.`
     };
   }
 
   function deriveProjectTitle(brief) {
     if (!brief) {
-      return "AI 생성 프로젝트";
+      return "콘티 설계 프로젝트";
     }
 
     if (brief.includes("승마") && brief.includes("패션")) {
@@ -3388,7 +3388,7 @@
     renderProjectSidebar();
     setSidebarSections("right", plan.previewVideoUrl ? ["video", "output"] : ["output"], false);
     renderPanels({ restoreView: true });
-    setStatus(source === "api" ? "AI 응답으로 콘티 초안을 반영했습니다." : "로컬 초안으로 콘티를 구성했습니다.");
+    setStatus(source === "api" ? "모델 응답으로 연출 보드 초안을 반영했습니다." : "로컬 초안으로 연출 보드를 구성했습니다.");
   }
 
   function getGeneratedPosition(index) {
@@ -3408,7 +3408,7 @@
     const names = ["브랜드 훅", "룩 디테일", "주인공 등장", "움직임 강조", "브랜드 아이콘", "엔드 프레임", "보조 컷", "보조 엔드"];
 
     return {
-      summary: `총 ${cutCount}컷이 적당합니다. ${duration.min}초~${duration.max}초 안에서 컷당 약 ${secondsPerCut}초로 운영하면 훅, 디테일, 움직임, 엔드 프레임까지 자연스럽게 이어집니다.`,
+      summary: `총 ${cutCount}컷 구성이 적당합니다. ${duration.min}초~${duration.max}초 안에서 컷당 약 ${secondsPerCut}초로 운영하면 훅, 디테일, 움직임, 엔드 프레임까지 자연스럽게 이어집니다.`,
       projectDraft: buildProjectDraft(payload, duration),
       cuts: Array.from({ length: cutCount }, (_, index) => ({
         sceneTitle: `${index + 1}. ${names[index] || `컷 ${index + 1}`}`,
@@ -3481,15 +3481,15 @@
     if (aiReferenceImages.length > 0) {
       return [
         {
-          title: "첨부 이미지 분석 중",
-          hint: "업로드한 이미지를 읽고 유지할 핵심 피사체와 무드를 정리하고 있습니다."
+          title: "레퍼런스 해석 중",
+          hint: "업로드한 이미지에서 유지할 핵심 피사체와 무드를 정리하고 있습니다."
         },
         {
-          title: "컷별 첨부 이미지 배치 중",
-          hint: "어떤 컷에 어떤 첨부 이미지를 묶을지 고르고 있습니다."
+          title: "컷 기준 배치 중",
+          hint: "어떤 컷에 어떤 레퍼런스를 묶어야 흐름이 선명한지 정리하고 있습니다."
         },
         {
-          title: "I2I / T2I / I2V 프롬프트 조합 중",
+          title: "실행 프롬프트 연결 중",
           hint: "레퍼런스를 바탕으로 이미지 생성과 영상 생성 문장을 정리하고 있습니다."
         },
         {
@@ -3505,12 +3505,12 @@
         hint: "브랜드 무드와 장면 흐름을 읽고 적절한 컷 수를 계산하고 있습니다."
       },
       {
-        title: "컷 흐름 설계 중",
+        title: "컷 구조 설계 중",
         hint: "도입부터 엔드 프레임까지 이어지는 장면 순서를 정리하고 있습니다."
       },
       {
-        title: "I2I / T2I / I2V 프롬프트 조합 중",
-        hint: "컷별 프롬프트를 모델 흐름에 맞게 정리하고 있습니다."
+        title: "실행 프롬프트 정리 중",
+        hint: "컷별 프롬프트를 제작 흐름에 맞게 정리하고 있습니다."
       },
       {
         title: "보드 반영 준비 중",
@@ -3527,7 +3527,7 @@
     return {
       summary: typeof rawPlan?.summary === "string" && rawPlan.summary.trim()
         ? rawPlan.summary.trim()
-        : "브리프를 기반으로 컷 흐름과 생성 프롬프트 초안을 만들었습니다.",
+        : "브리프를 기반으로 컷 흐름과 실행 프롬프트 초안을 정리했습니다.",
       previewVideoUrl: typeof rawPlan?.previewVideoUrl === "string" ? rawPlan.previewVideoUrl : "",
       previewPosterUrl: typeof rawPlan?.previewPosterUrl === "string" ? rawPlan.previewPosterUrl : "",
       projectDraft,
@@ -3644,7 +3644,7 @@
     renderProjectSidebar();
     setSidebarSections("right", plan.previewVideoUrl ? ["video", "output"] : ["output"], false);
     renderPanels({ restoreView: true });
-    setStatus(source === "api" ? "AI 응답으로 콘티 초안을 반영했습니다." : "로컬 초안으로 콘티를 구성했습니다.");
+    setStatus(source === "api" ? "모델 응답으로 연출 보드 초안을 반영했습니다." : "로컬 초안으로 연출 보드를 구성했습니다.");
   }
 
   function buildLocalStoryboardPlan(payload) {
@@ -3660,7 +3660,7 @@
     const referenceCount = Number(payload?.referenceImageCount) || 0;
 
     return {
-      summary: `총 ${cutCount}컷이 적당합니다. ${duration.min}초~${duration.max}초 안에서 컷당 약 ${secondsPerCut}초로 운영하면 브랜드 무드와 엔드 프레임까지 자연스럽게 이어집니다.`,
+      summary: `총 ${cutCount}컷 구성이 적당합니다. ${duration.min}초~${duration.max}초 안에서 컷당 약 ${secondsPerCut}초로 운영하면 브랜드 무드와 엔드 프레임까지 자연스럽게 이어집니다.`,
       projectDraft: buildProjectDraft(payload, duration),
       cuts: Array.from({ length: cutCount }, (_, index) => {
         const referenceImageIndexes = buildReferenceIndexList(referenceCount, index, referenceCount > 2 ? 3 : 2);
@@ -3952,14 +3952,14 @@
       const referenceMeta = aiReferenceImages.length > 0
         ? ` · 첨부 이미지 ${aiReferenceImages.length}장 · iw ${sanitizeReferenceWeight(project.referenceWeight)}`
         : "";
-      aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 브리프 초안 준비 완료${referenceMeta}`;
+      aiPlanMetaEl.textContent = `${project.aiModel || "Gemini 2.5 Flash"} 기준 연출 초안 준비 완료${referenceMeta}`;
     } else {
-      aiPlanMetaEl.textContent = "브리프와 첨부 이미지를 넣으면 컷 흐름과 프롬프트가 카드로 펼쳐집니다.";
+      aiPlanMetaEl.textContent = "브리프와 첨부 이미지를 넣으면 장면 흐름, 컷 구조, 프롬프트 베이스가 카드로 펼쳐집니다.";
     }
 
     aiSummaryOutputEl.textContent = project.aiSummary?.trim()
       ? project.aiSummary
-      : "브리프를 넣고 생성하면 전체 연출 방향과 AI 결과가 여기에 정리됩니다.";
+      : "브리프를 넣고 구조를 만들면 전체 연출 방향과 컷 흐름이 여기에 정리됩니다.";
 
     aiSequenceOutputEl.innerHTML = "";
     panels.forEach((panel, index) => {
@@ -3981,8 +3981,8 @@
       emptyItem.innerHTML = `
         <span class="sequence-index">+</span>
         <div>
-          <strong>아직 생성된 컷이 없습니다</strong>
-          <p>브리프와 첨부 이미지를 넣고 AI 콘티 초안 생성을 눌러주세요.</p>
+          <strong>아직 설계된 컷이 없습니다</strong>
+          <p>브리프와 첨부 이미지를 넣고 연출 보드 초안 생성을 눌러주세요.</p>
         </div>
       `;
       aiSequenceOutputEl.appendChild(emptyItem);
@@ -4562,8 +4562,8 @@
 
     setStatus(
       source === "api"
-        ? "선택한 컷만 다시 AI 생성했습니다."
-        : "선택한 컷을 로컬 초안으로 다시 정리했습니다."
+        ? "선택한 컷 구조를 다시 정리했습니다."
+        : "선택한 컷을 로컬 연출 초안으로 다시 정리했습니다."
     );
   }
 
@@ -4583,10 +4583,10 @@
     }
 
     const shouldRegenerate = await openConfirmDialog({
-      eyebrow: "선택 컷 재생성",
-      title: `${orderedSelectedPanels.length}개의 선택 컷만 다시 생성할까요?`,
+      eyebrow: "선택 컷 다시 정리",
+      title: `${orderedSelectedPanels.length}개의 선택 컷 구조만 다시 정리할까요?`,
       description: "선택한 컷의 제목, 설명, T2I/I2V 프롬프트만 새로 정리합니다. 카드 위치와 연결은 그대로 유지됩니다.",
-      confirmLabel: "선택 컷 재생성"
+      confirmLabel: "선택 컷 다시 정리"
     });
 
     if (!shouldRegenerate) {
@@ -4631,7 +4631,7 @@
 
       if (!plan) {
         plan = buildLocalSelectedStoryboardPlan(payload);
-        setStatus("AI 연결에 실패해 선택 컷을 로컬 초안으로 다시 만들었습니다.", "warning");
+        setStatus("모델 연결에 실패해 선택 컷을 로컬 연출 초안으로 다시 만들었습니다.", "warning");
       }
 
       pushHistoryState();

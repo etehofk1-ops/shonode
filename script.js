@@ -420,7 +420,7 @@ clearBoardButton?.addEventListener("click", async (event) => {
     tone: "danger",
     eyebrow: "작업 초기화",
     title: "현재 워크스페이스를 초기화할까요?",
-    description: "패널 배치, 프로젝트 정보, AI 초안, 선택 상태가 기본값으로 돌아갑니다.",
+    description: "패널 배치, 프로젝트 정보, 연출 초안, 선택 상태가 기본값으로 돌아갑니다.",
     confirmLabel: "초기화"
   });
 
@@ -482,7 +482,7 @@ function initializeClearBoardButton() {
       tone: "danger",
       eyebrow: "Reset Workspace",
       title: "Reset the current workspace?",
-      description: "All cards, project info, AI drafts, and selection state will return to their defaults.",
+      description: "All cards, project info, direction drafts, and selection state will return to their defaults.",
       confirmLabel: "Reset"
     });
 
