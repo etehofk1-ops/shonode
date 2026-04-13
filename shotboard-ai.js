@@ -12,6 +12,8 @@
   const WORKSPACE_LIBRARY_DB_NAME = "shonode-workspace-library-db-v1";
   const WORKSPACE_LIBRARY_DB_STORE_NAME = "workspace-snapshots";
   const AI_REFERENCE_IMAGE_LIMIT = 10;
+  const IDENTITY_ENTITY_TYPES = ["character", "product", "prop", "space"];
+  const IDENTITY_COMPONENT_TYPES = ["base", "outfit", "accessory", "expression", "pose", "material"];
 
   const aiBriefInputEl = document.getElementById("aiBriefInput");
   const aiModelInputEl = document.getElementById("aiModelInput");
@@ -25,6 +27,8 @@
   const aiReferenceInlineGridEl = document.getElementById("aiReferenceInlineGrid");
   const aiReferenceListEl = document.getElementById("aiReferenceList");
   const aiReferenceCountEl = document.getElementById("aiReferenceCount");
+  const createIdentityPackButtonEl = document.getElementById("createIdentityPackButton");
+  const identityPackListEl = document.getElementById("identityPackList");
   const referenceLightboxEl = document.getElementById("referenceLightbox");
   const referenceLightboxBackdropEl = document.getElementById("referenceLightboxBackdrop");
   const referenceLightboxCloseEl = document.getElementById("referenceLightboxClose");
@@ -147,7 +151,8 @@
       pipelineLook: "",
       pipelineGoal: "",
       pipelineIdeationMode: "i2t",
-      pipelineVideoMode: "start-end"
+      pipelineVideoMode: "start-end",
+      identityPacks: []
     };
   };
 
@@ -165,7 +170,8 @@
       pipelineLook: typeof candidate?.pipelineLook === "string" ? candidate.pipelineLook : "",
       pipelineGoal: typeof candidate?.pipelineGoal === "string" ? candidate.pipelineGoal : "",
       pipelineIdeationMode: sanitizePipelineIdeationMode(candidate?.pipelineIdeationMode),
-      pipelineVideoMode: sanitizePipelineVideoMode(candidate?.pipelineVideoMode)
+      pipelineVideoMode: sanitizePipelineVideoMode(candidate?.pipelineVideoMode),
+      identityPacks: normalizeIdentityPacks(candidate?.identityPacks)
     };
   };
 
@@ -182,7 +188,11 @@
       pipelineLook: projectValue.pipelineLook ?? "",
       pipelineGoal: projectValue.pipelineGoal ?? "",
       pipelineIdeationMode: sanitizePipelineIdeationMode(projectValue.pipelineIdeationMode),
-      pipelineVideoMode: sanitizePipelineVideoMode(projectValue.pipelineVideoMode)
+      pipelineVideoMode: sanitizePipelineVideoMode(projectValue.pipelineVideoMode),
+      identityPacks: normalizeIdentityPacks(projectValue.identityPacks).map((pack) => ({
+        ...pack,
+        referenceImageIds: [...pack.referenceImageIds]
+      }))
     };
   };
 
@@ -203,6 +213,7 @@
       i2vMotionPrompt: "",
       i2vEndPrompt: "",
       i2vOmniPrompt: "",
+      identityPackIds: [],
       nextPanelIds: [],
       videoFileName: "",
       ...overrides
@@ -235,6 +246,7 @@
       imagePromptMode,
       referenceImageIds,
       referenceImageNames,
+      identityPackIds: normalizeIdentityPackIds(panel?.identityPackIds),
       referenceImageId: referenceImageIds[0] || "",
       referenceImageName: referenceImageNames[0] || "",
       t2iPrompt: typeof panel?.t2iPrompt === "string" ? panel.t2iPrompt : "",
@@ -288,6 +300,7 @@
     }
     renderWorkspaceLibrary();
     renderAiReferenceImages();
+    renderIdentityPackList();
     renderAiOutputs();
     renderPreviewSidebar();
   };
@@ -435,6 +448,7 @@
     const i2iTitleTextEl = fragment.querySelector('[data-prompt-title-kind="i2i"]');
     const t2iViewLabelEl = fragment.querySelector('[data-view-label="t2i"]');
     const referenceBookmarkListEl = fragment.querySelector(".reference-bookmark-list");
+    const identityPackChipListEl = fragment.querySelector("[data-identity-pack-chip-list]");
     const referenceBookmarkEl = fragment.querySelector(".reference-bookmark");
     const referenceBookmarkThumbEl = fragment.querySelector(".reference-bookmark-thumb");
     const referenceBookmarkNameEl = fragment.querySelector(".reference-bookmark-name");
@@ -479,6 +493,8 @@
     card.classList.toggle("is-link-target", linkState?.targetId === panel.id);
 
     const referenceImages = getPanelReferenceImages(panel);
+    const identityPacks = getPanelIdentityPacks(panel);
+    renderIdentityPackChipList(identityPackChipListEl, identityPacks);
     if (referenceBookmarkListEl) {
       referenceBookmarkListEl.innerHTML = "";
       referenceBookmarkListEl.hidden = referenceImages.length === 0;
@@ -711,6 +727,12 @@
 
   generatePlanButtonEl.addEventListener("click", handleGeneratePlan);
   regenerateSelectionButtonEl?.addEventListener("click", handleRegenerateSelectedPanels);
+  createIdentityPackButtonEl?.addEventListener("click", handleCreateIdentityPack);
+  identityPackListEl?.addEventListener("click", handleIdentityPackListClick);
+  identityPackListEl?.addEventListener("change", handleIdentityPackListChange);
+  identityPackListEl?.addEventListener("input", handleIdentityPackListInput);
+  identityPackListEl?.addEventListener("blur", handleIdentityPackListBlur, true);
+  selectionDetailOutputEl?.addEventListener("change", handleSelectionDetailChange);
   importWorkspaceInputEl?.addEventListener("change", handleImportWorkspaceInputChange);
   createWorkspaceButtonEl?.addEventListener("click", handleCreateWorkspace);
   duplicateWorkspaceButtonEl?.addEventListener("click", handleDuplicateWorkspace);
@@ -981,6 +1003,8 @@
 
   function buildPipelineContext(selectedPanels = getPipelineSelectedPanels()) {
     const primaryPanel = selectedPanels.length === 1 ? selectedPanels[0] : null;
+    const primaryIdentityPacks = primaryPanel ? getPanelIdentityPacks(primaryPanel) : [];
+    const projectIdentityPacks = getIdentityPacks();
     const brief = trimPipelineText(project.aiBrief);
     const goal = trimPipelineText(project.pipelineGoal)
       || trimPipelineText(primaryPanel?.caption)
@@ -1006,6 +1030,14 @@
     const referenceGuide = referenceNames.length > 0
       ? `${referenceNames.join(", ")}${aiReferenceImages.length > referenceNames.length ? ` + ${aiReferenceImages.length - referenceNames.length} more` : ""}`
       : "No attached project references yet";
+    const identityPackGuideSource = primaryIdentityPacks.length > 0 ? primaryIdentityPacks : projectIdentityPacks;
+    const identityPackGuide = identityPackGuideSource.length > 0
+      ? identityPackGuideSource
+        .slice(0, 4)
+        .map((pack) => buildIdentityPackPromptSummary(pack))
+        .filter(Boolean)
+        .join(" || ")
+      : "No structured identity packs yet";
     const targetSummary = primaryPanel
       ? compactPipelineText([primaryPanel.sceneTitle, primaryPanel.caption].filter(Boolean).join(" - "), 180)
       : selectedPanels.length > 1
@@ -1029,6 +1061,8 @@
       promptSeed,
       referenceGuide,
       referenceCount: aiReferenceImages.length,
+      identityPackGuide,
+      identityPackCount: identityPackGuideSource.length,
       targetSummary,
       targetMeta,
       aspectRatio: trimPipelineText(project.aspectRatio) || "16:9"
@@ -1042,6 +1076,9 @@
       `This image will become the identity seed for a multi-angle sheet, a 9-expression sheet, storyboard planning, and final I2V generation.`,
       `Keep the subject clean, readable, and stable: consistent face or product identity, strong silhouette, precise costume or material details, premium lighting, and a polished commercial finish.`,
       `Compose it as one hero image in ${context.aspectRatio} with no collage, no split panels, no text, and no watermark.`,
+      context.identityPackCount > 0
+        ? `Respect these structured identity packs as hard continuity anchors: ${context.identityPackGuide}.`
+        : "No structured identity pack is attached yet, so make the hero image easy to break into future sheet packs.",
       context.referenceCount > 0
         ? `Use attached references only as mood or identity anchors: ${context.referenceGuide}.`
         : "Design the first hero image from text only, but keep the identity easy to reuse in later image-to-image steps.",
@@ -1055,6 +1092,9 @@
       `Generate a clean multi-angle turnaround grid for the same subject.`,
       "Include 8 views in one sheet: full front, left three-quarter, left profile, rear three-quarter, full back, right three-quarter, right profile, and a close portrait.",
       "Lock identity, proportions, outfit or product detail, materials, hair, accessories, and lighting family across every tile.",
+      context.identityPackCount > 0
+        ? `Preserve the structured sheet cues from these packs: ${context.identityPackGuide}.`
+        : "Preserve the master concept identity exactly and avoid redesign.",
       "Use a neutral studio background, evenly spaced grid, clear separation between views, no extra characters, no text labels, and no watermark.",
       `Keep the same commercial tone: ${context.look}.`
     ].join("\n");
@@ -1066,6 +1106,9 @@
       "Generate a 3x3 expression sheet with 9 readable variations of the same subject.",
       "Expressions or moods: neutral, soft smile, bright smile, confident, focused, surprised, serious, playful, intense.",
       "Keep identity, costume, materials, camera distance, lighting family, and background consistency locked across all nine tiles.",
+      context.identityPackCount > 0
+        ? `Carry over the same identity-pack details into the expressions: ${context.identityPackGuide}.`
+        : "Keep the same styling anchors from the master concept across all nine tiles.",
       "Make facial muscles, eye direction, and mouth shape clearly readable while preserving the same person or product styling.",
       "Clean 3x3 grid, no text, no watermark, no extra props unless they are core identity anchors."
     ].join("\n");
@@ -1085,6 +1128,7 @@
       "",
       `I want to make this video: ${context.goal}`,
       `Current planning target: ${context.targetSummary}`,
+      context.identityPackCount > 0 ? `Structured identity packs: ${context.identityPackGuide}` : "",
       `Please help me develop this with an ${ideationLabel} storyboard-planning workflow.`,
       "",
       "Deliverables:",
@@ -1125,6 +1169,7 @@
       "",
       `Final video goal: ${context.goal}`,
       `Current shot target: ${context.targetSummary}`,
+      context.identityPackCount > 0 ? `Structured identity packs: ${context.identityPackGuide}` : "",
       `Please convert these assets into ${videoLabel} I2V prompts for Kling, Seedance 2.0, or a similar high-end video model.`,
       "",
       "Output requirements:",
@@ -1133,6 +1178,7 @@
       "Global rules:",
       `- Keep this subject stable across the whole sequence: ${context.subject}.`,
       `- Preserve this visual direction: ${context.look}.`,
+      context.identityPackCount > 0 ? `- Treat these identity packs as non-negotiable continuity anchors: ${context.identityPackGuide}.` : "",
       "- Avoid face drift, costume drift, anatomy drift, and background continuity breaks.",
       "- Motion should feel intentional, premium, and physically plausible.",
       context.promptSeed
@@ -1243,6 +1289,9 @@
       : context.referenceCount > 0
         ? `Reference anchors: ${context.referenceGuide}.`
         : "Reference anchors: preserve the approved master concept identity exactly.";
+    const identityPackLine = context.identityPackCount > 0
+      ? `Structured identity packs: ${context.identityPackGuide}.`
+      : "Structured identity packs: preserve the approved hero identity and sheet hierarchy.";
 
     if (context.videoMode === "omni") {
       return {
@@ -1253,6 +1302,7 @@
           `Overall video goal: ${context.goal}.`,
           `Visual direction: ${context.look}.`,
           `Camera and motion: refined cinematic movement, premium pacing, physically plausible motion, and clean continuity into ${nextSceneTitle}.`,
+          identityPackLine,
           referenceLine,
           "Preserve face or product identity, silhouette, materials, costume details, lighting family, and anatomy stability.",
           "Avoid morphing, drift, extra limbs, broken hands, warped costume detail, random props, random text, or watermark."
@@ -1267,6 +1317,7 @@
         `opening frame for ${caption}`,
         "derived from the approved identity sheets",
         "premium cinematic commercial still",
+        identityPackLine,
         referenceLine
       ].join(", "),
       motionPrompt: [
@@ -2053,6 +2104,157 @@
     return typeof fallbackName === "string" && fallbackName.trim() ? [fallbackName.trim()] : [];
   }
 
+  function sanitizeIdentityEntityType(value) {
+    return IDENTITY_ENTITY_TYPES.includes(value) ? value : "character";
+  }
+
+  function sanitizeIdentityComponentType(value) {
+    return IDENTITY_COMPONENT_TYPES.includes(value) ? value : "base";
+  }
+
+  function getIdentityEntityLabel(value) {
+    switch (sanitizeIdentityEntityType(value)) {
+      case "product":
+        return "Product";
+      case "prop":
+        return "Prop";
+      case "space":
+        return "Space";
+      default:
+        return "Character";
+    }
+  }
+
+  function getIdentityComponentLabel(value) {
+    switch (sanitizeIdentityComponentType(value)) {
+      case "outfit":
+        return "Outfit";
+      case "accessory":
+        return "Accessory";
+      case "expression":
+        return "Expression";
+      case "pose":
+        return "Pose";
+      case "material":
+        return "Material";
+      default:
+        return "Base";
+    }
+  }
+
+  function normalizeIdentityPackIds(identityPackIds) {
+    return Array.isArray(identityPackIds)
+      ? Array.from(
+        new Set(
+          identityPackIds
+            .filter((value) => typeof value === "string")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        )
+      )
+      : [];
+  }
+
+  function normalizeIdentityPack(pack, index = 0) {
+    if (!pack || typeof pack !== "object") {
+      return null;
+    }
+
+    const name = typeof pack.name === "string" && pack.name.trim()
+      ? pack.name.trim()
+      : `Identity Pack ${index + 1}`;
+
+    return {
+      id: typeof pack.id === "string" && pack.id.trim() ? pack.id : createId(),
+      name,
+      entityType: sanitizeIdentityEntityType(pack.entityType),
+      componentType: sanitizeIdentityComponentType(pack.componentType),
+      notes: typeof pack.notes === "string" ? pack.notes : "",
+      referenceImageIds: normalizeReferenceImageIds(pack.referenceImageIds)
+    };
+  }
+
+  function normalizeIdentityPacks(identityPacks) {
+    if (!Array.isArray(identityPacks)) {
+      return [];
+    }
+
+    const usedIds = new Set();
+    const normalized = [];
+    identityPacks.forEach((pack, index) => {
+      const nextPack = normalizeIdentityPack(pack, index);
+      if (!nextPack) {
+        return;
+      }
+
+      if (usedIds.has(nextPack.id)) {
+        nextPack.id = createId();
+      }
+
+      usedIds.add(nextPack.id);
+      normalized.push(nextPack);
+    });
+
+    return normalized;
+  }
+
+  function getIdentityPacks() {
+    return normalizeIdentityPacks(project.identityPacks);
+  }
+
+  function getIdentityPackById(identityPackId) {
+    return getIdentityPacks().find((pack) => pack.id === identityPackId) || null;
+  }
+
+  function getPanelIdentityPackIds(panel) {
+    return normalizeIdentityPackIds(panel?.identityPackIds)
+      .filter((identityPackId) => Boolean(getIdentityPackById(identityPackId)));
+  }
+
+  function getPanelIdentityPacks(panel) {
+    return getPanelIdentityPackIds(panel)
+      .map((identityPackId) => getIdentityPackById(identityPackId))
+      .filter(Boolean);
+  }
+
+  function buildIdentityPackBadgeLabel(pack) {
+    if (!pack) {
+      return "";
+    }
+
+    return `${getIdentityEntityLabel(pack.entityType)} / ${getIdentityComponentLabel(pack.componentType)}`;
+  }
+
+  function getIdentityPackUsageCount(identityPackId) {
+    return panels.reduce((count, panel) => {
+      return count + (getPanelIdentityPackIds(panel).includes(identityPackId) ? 1 : 0);
+    }, 0);
+  }
+
+  function getIdentityPackReferenceImages(pack) {
+    return normalizeReferenceImageIds(pack?.referenceImageIds)
+      .map((referenceImageId) => getReferenceImageById(referenceImageId))
+      .filter(Boolean);
+  }
+
+  function buildIdentityPackPromptSummary(pack) {
+    if (!pack) {
+      return "";
+    }
+
+    const referenceNames = getIdentityPackReferenceImages(pack)
+      .map((image) => trimPipelineText(image?.name))
+      .filter(Boolean);
+    const summaryParts = [
+      pack.name,
+      buildIdentityPackBadgeLabel(pack),
+      pack.notes ? compactPipelineText(pack.notes, 96) : "",
+      referenceNames.length > 0 ? referenceNames.join(", ") : ""
+    ].filter(Boolean);
+
+    return summaryParts.join(" | ");
+  }
+
   function getPanelReferenceImageIds(panel) {
     return normalizeReferenceImageIds(panel?.referenceImageIds, panel?.referenceImageId);
   }
@@ -2285,9 +2487,25 @@
       return;
     }
 
+    const nextIdentityPacks = getIdentityPacks().map((pack) => ({
+      ...pack,
+      referenceImageIds: normalizeReferenceImageIds(pack.referenceImageIds).filter((value) => value !== referenceId)
+    }));
+    panels = panels.map((panel, index) => {
+      const nextReferenceItems = getPanelReferenceImages(panel).filter((item) => item.id !== referenceId);
+      return normalizePanel({
+        ...panel,
+        referenceImageIds: nextReferenceItems.map((item) => item.id).filter(Boolean),
+        referenceImageNames: nextReferenceItems.map((item) => item.name).filter(Boolean),
+        referenceImageId: nextReferenceItems[0]?.id || "",
+        referenceImageName: nextReferenceItems[0]?.name || ""
+      }, index);
+    });
     aiReferenceImages = nextImages;
+    updateProject({ identityPacks: nextIdentityPacks }, { announce: false });
+    persistPanels();
     await persistAiReferenceImages();
-    renderAiReferenceImages();
+    renderPanels();
     setStatus("첨부 이미지를 제거했습니다.");
   }
 
@@ -3463,18 +3681,77 @@
     }
 
     const panel = selectedPanels[0];
+    const linkedIdentityPacks = getPanelIdentityPacks(panel);
+    const availableIdentityPacks = getIdentityPacks();
     const detail = document.createElement("article");
     detail.className = "selection-detail-card";
     detail.innerHTML = `
       <strong>${escapeHtml(panel.sceneTitle || "선택된 컷")}</strong>
-      <p>${escapeHtml(panel.caption || "설명 없음")}</p>
-      <p>${escapeHtml([
+      <p class="selection-detail-copy">${escapeHtml(panel.caption || "설명 없음")}</p>
+      <p class="selection-detail-copy">${escapeHtml([
         getReferenceSummaryText(panel),
         panel.t2iPrompt ? `${getPromptDisplayLabel(panel)} ${panel.t2iPrompt.length}자` : `${getPromptDisplayLabel(panel)} 비어 있음`,
         panel.i2vStartPrompt || panel.i2vMotionPrompt || panel.i2vEndPrompt ? "I2V 준비됨" : "I2V 비어 있음"
       ].join(" · "))}</p>
     `;
+
+    const identitySection = document.createElement("section");
+    identitySection.className = "selection-identity-section";
+    identitySection.innerHTML = `
+      <h3 class="selection-identity-heading">연결된 Identity Pack</h3>
+      <p class="selection-identity-copy">이 컷에서 꼭 유지되어야 하는 인물, 제품, 의상, 소재 시트를 연결하세요.</p>
+    `;
+
+    const linkedChipList = document.createElement("div");
+    linkedChipList.className = "selection-identity-chip-list";
+    renderIdentityPackChipList(linkedChipList, linkedIdentityPacks);
+    if (linkedIdentityPacks.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "selection-identity-empty";
+      emptyState.textContent = "아직 연결된 팩이 없습니다. 아래 체크박스로 이 컷에 필요한 시트를 붙여주세요.";
+      identitySection.appendChild(emptyState);
+    } else {
+      identitySection.appendChild(linkedChipList);
+    }
+
+    if (availableIdentityPacks.length > 0) {
+      const toggleList = document.createElement("div");
+      toggleList.className = "selection-pack-toggle-list";
+      availableIdentityPacks.forEach((pack) => {
+        const option = document.createElement("label");
+        option.className = "selection-pack-toggle";
+        const referenceImages = getIdentityPackReferenceImages(pack);
+        const noteParts = [
+          pack.notes ? compactPipelineText(pack.notes, 120) : "",
+          referenceImages.length > 0
+            ? referenceImages
+              .map((image) => trimPipelineText(image?.name))
+              .filter(Boolean)
+              .slice(0, 3)
+              .join(", ")
+            : ""
+        ].filter(Boolean);
+        option.innerHTML = `
+          <input
+            type="checkbox"
+            data-selection-pack-toggle="${escapeHtml(pack.id)}"
+            ${linkedIdentityPacks.some((item) => item.id === pack.id) ? "checked" : ""}
+          >
+          <span class="selection-pack-toggle-copy">
+            <span class="selection-pack-toggle-label">
+              ${escapeHtml(pack.name)}
+              <span class="identity-pack-chip__meta">${escapeHtml(buildIdentityPackBadgeLabel(pack))}</span>
+            </span>
+            ${noteParts.length > 0 ? `<span class="selection-pack-toggle-note">${escapeHtml(noteParts.join(" · "))}</span>` : ""}
+          </span>
+        `;
+        toggleList.appendChild(option);
+      });
+      identitySection.appendChild(toggleList);
+    }
+
     selectionDetailOutputEl.appendChild(detail);
+    selectionDetailOutputEl.appendChild(identitySection);
   }
 
   function getGeneratingStages() {
@@ -3884,6 +4161,8 @@
       `;
       aiReferenceInlineGridEl.appendChild(item);
     });
+
+    renderIdentityPackList();
   }
 
   function renderAiReferenceImages() {
@@ -3989,6 +4268,376 @@
     }
 
     renderPromptPipeline();
+  }
+
+  function renderIdentityPackChipList(container, identityPacks) {
+    if (!container) {
+      return;
+    }
+
+    const packs = Array.isArray(identityPacks) ? identityPacks.filter(Boolean) : [];
+    container.innerHTML = "";
+    container.hidden = packs.length === 0;
+
+    packs.forEach((pack) => {
+      const chip = document.createElement("span");
+      chip.className = "identity-pack-chip";
+      chip.innerHTML = `
+        <span>${escapeHtml(pack.name || "Identity Pack")}</span>
+        <span class="identity-pack-chip__meta">${escapeHtml(buildIdentityPackBadgeLabel(pack))}</span>
+      `;
+      container.appendChild(chip);
+    });
+  }
+
+  function updateIdentityPacks(identityPacks, options = {}) {
+    const {
+      renderList = true,
+      renderPanels: shouldRenderPanels = true,
+      announceText = ""
+    } = options;
+    const nextIdentityPacks = normalizeIdentityPacks(identityPacks);
+    updateProject({ identityPacks: nextIdentityPacks }, { announce: false });
+
+    if (renderList) {
+      renderIdentityPackList();
+    }
+    if (shouldRenderPanels) {
+      renderPanels();
+    } else {
+      renderAiOutputs();
+    }
+    if (announceText) {
+      setStatus(announceText);
+    }
+  }
+
+  function createIdentityPackDraft() {
+    const packs = getIdentityPacks();
+    const nextIndex = packs.length + 1;
+    const firstUnusedReference = aiReferenceImages.find((image) => {
+      return !packs.some((pack) => normalizeReferenceImageIds(pack.referenceImageIds).includes(image.id));
+    });
+
+    return normalizeIdentityPack({
+      name: firstUnusedReference?.name?.replace(/\.[a-z0-9]+$/i, "") || `Identity Pack ${nextIndex}`,
+      entityType: "character",
+      componentType: "base",
+      notes: "",
+      referenceImageIds: firstUnusedReference ? [firstUnusedReference.id] : []
+    }, packs.length);
+  }
+
+  function renderIdentityPackList() {
+    if (!identityPackListEl) {
+      return;
+    }
+
+    const identityPacks = getIdentityPacks();
+    const selectedPanels = getPipelineSelectedPanels();
+
+    if (identityPacks.length === 0) {
+      identityPackListEl.innerHTML = `
+        <div class="identity-pack-empty">
+          아직 Identity Pack이 없습니다. 먼저 레퍼런스를 올리고, 인물 기본 시트나 제품 디테일 시트처럼 의미 단위로 팩을 만들어보세요.
+        </div>
+      `;
+      return;
+    }
+
+    identityPackListEl.innerHTML = "";
+    identityPacks.forEach((pack) => {
+      const usageCount = getIdentityPackUsageCount(pack.id);
+      const selectedPanelsConnected = selectedPanels.length > 0
+        && selectedPanels.every((panel) => getPanelIdentityPackIds(panel).includes(pack.id));
+      const article = document.createElement("article");
+      article.className = "identity-pack-card";
+      article.dataset.packId = pack.id;
+      article.innerHTML = `
+        <div class="identity-pack-card-header">
+          <div>
+            <span class="identity-pack-badge">${escapeHtml(buildIdentityPackBadgeLabel(pack))}</span>
+            <span class="identity-pack-usage">${usageCount}컷 연결</span>
+          </div>
+          <div class="identity-pack-action-row">
+            <button
+              class="ghost-button identity-pack-select-button"
+              type="button"
+              data-pack-action="toggle-selection"
+              data-pack-id="${escapeHtml(pack.id)}"
+              ${selectedPanels.length === 0 ? "disabled" : ""}
+            >${selectedPanelsConnected ? "선택 컷 해제" : "선택 컷 연결"}</button>
+            <button
+              class="ghost-button identity-pack-delete-button"
+              type="button"
+              data-pack-action="delete"
+              data-pack-id="${escapeHtml(pack.id)}"
+            >삭제</button>
+          </div>
+        </div>
+        <label class="sidebar-field">
+          <span class="sidebar-label">팩 이름</span>
+          <input class="sidebar-input" type="text" data-pack-field="name" data-pack-id="${escapeHtml(pack.id)}">
+        </label>
+        <div class="identity-pack-field-grid">
+          <label class="sidebar-field">
+            <span class="sidebar-label">주체</span>
+            <select class="sidebar-input" data-pack-field="entityType" data-pack-id="${escapeHtml(pack.id)}">
+              <option value="character">Character</option>
+              <option value="product">Product</option>
+              <option value="prop">Prop</option>
+              <option value="space">Space</option>
+            </select>
+          </label>
+          <label class="sidebar-field">
+            <span class="sidebar-label">구성요소</span>
+            <select class="sidebar-input" data-pack-field="componentType" data-pack-id="${escapeHtml(pack.id)}">
+              <option value="base">Base</option>
+              <option value="outfit">Outfit</option>
+              <option value="accessory">Accessory</option>
+              <option value="expression">Expression</option>
+              <option value="pose">Pose</option>
+              <option value="material">Material</option>
+            </select>
+          </label>
+        </div>
+        <label class="sidebar-field">
+          <span class="sidebar-label">연출 메모</span>
+          <textarea
+            class="sidebar-input sidebar-textarea identity-pack-note-input"
+            rows="3"
+            data-pack-field="notes"
+            data-pack-id="${escapeHtml(pack.id)}"
+            placeholder="예: 얼굴 실루엣은 유지, 네이비 자켓 금속 디테일 강조, 가죽 질감 흔들리면 안 됨"
+          ></textarea>
+        </label>
+        <div class="identity-pack-ref-group">
+          <div class="identity-pack-ref-header">
+            <span class="sidebar-label">연결된 시트 이미지</span>
+            <span class="identity-pack-ref-meta">${normalizeReferenceImageIds(pack.referenceImageIds).length}장 선택</span>
+          </div>
+          ${aiReferenceImages.length > 0 ? `
+            <div class="identity-pack-ref-grid">
+              ${aiReferenceImages.map((image, imageIndex) => `
+                <label class="identity-pack-ref-option">
+                  <input
+                    type="checkbox"
+                    data-pack-reference-id="${escapeHtml(image.id)}"
+                    data-pack-id="${escapeHtml(pack.id)}"
+                    ${normalizeReferenceImageIds(pack.referenceImageIds).includes(image.id) ? "checked" : ""}
+                  >
+                  <img class="identity-pack-ref-thumb" src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name || `reference-${imageIndex + 1}`)}">
+                  <span class="identity-pack-ref-copy">
+                    <span class="identity-pack-ref-label">REF ${String(imageIndex + 1).padStart(2, "0")}</span>
+                    <span class="identity-pack-ref-name">${escapeHtml(image.name || `reference-${imageIndex + 1}`)}</span>
+                  </span>
+                </label>
+              `).join("")}
+            </div>
+          ` : `
+            <div class="identity-pack-empty">먼저 첨부 이미지를 올리면 여기서 바로 시트 기준 이미지를 고를 수 있습니다.</div>
+          `}
+        </div>
+      `;
+
+      const nameInput = article.querySelector('[data-pack-field="name"]');
+      const entityTypeSelect = article.querySelector('[data-pack-field="entityType"]');
+      const componentTypeSelect = article.querySelector('[data-pack-field="componentType"]');
+      const notesInput = article.querySelector('[data-pack-field="notes"]');
+      if (nameInput) {
+        nameInput.value = pack.name;
+      }
+      if (entityTypeSelect) {
+        entityTypeSelect.value = sanitizeIdentityEntityType(pack.entityType);
+      }
+      if (componentTypeSelect) {
+        componentTypeSelect.value = sanitizeIdentityComponentType(pack.componentType);
+      }
+      if (notesInput) {
+        notesInput.value = pack.notes || "";
+      }
+
+      identityPackListEl.appendChild(article);
+    });
+  }
+
+  function handleCreateIdentityPack() {
+    pushHistoryState();
+    const nextIdentityPacks = [...getIdentityPacks(), createIdentityPackDraft()];
+    updateIdentityPacks(nextIdentityPacks, {
+      announceText: "새 Identity Pack을 만들었습니다."
+    });
+    updateHistoryUI();
+  }
+
+  function handleIdentityPackListClick(event) {
+    const actionButton = event.target.closest("[data-pack-action]");
+    if (!actionButton) {
+      return;
+    }
+
+    const packId = actionButton.dataset.packId;
+    if (!packId) {
+      return;
+    }
+
+    if (actionButton.dataset.packAction === "delete") {
+      pushHistoryState();
+      const nextIdentityPacks = getIdentityPacks().filter((pack) => pack.id !== packId);
+      panels = panels.map((panel, index) => normalizePanel({
+        ...panel,
+        identityPackIds: getPanelIdentityPackIds(panel).filter((identityPackId) => identityPackId !== packId)
+      }, index));
+      persistPanels();
+      updateIdentityPacks(nextIdentityPacks, {
+        announceText: "Identity Pack을 삭제했습니다."
+      });
+      updateHistoryUI();
+      return;
+    }
+
+    if (actionButton.dataset.packAction === "toggle-selection") {
+      const selectedPanels = getPipelineSelectedPanels();
+      if (selectedPanels.length === 0) {
+        setStatus("먼저 연결할 컷을 선택해주세요.", "warning");
+        return;
+      }
+
+      const detach = selectedPanels.every((panel) => getPanelIdentityPackIds(panel).includes(packId));
+      pushHistoryState();
+      panels = panels.map((panel, index) => {
+        if (!selectedPanelIds.has(panel.id)) {
+          return panel;
+        }
+
+        const nextPackIds = detach
+          ? getPanelIdentityPackIds(panel).filter((identityPackId) => identityPackId !== packId)
+          : Array.from(new Set([...getPanelIdentityPackIds(panel), packId]));
+
+        return normalizePanel({
+          ...panel,
+          identityPackIds: nextPackIds
+        }, index);
+      });
+      persistPanels();
+      renderIdentityPackList();
+      renderPanels();
+      updateHistoryUI();
+      setStatus(detach ? "선택 컷에서 Identity Pack 연결을 해제했습니다." : "선택 컷에 Identity Pack을 연결했습니다.");
+    }
+  }
+
+  function handleIdentityPackListInput(event) {
+    const field = event.target?.dataset?.packField;
+    const packId = event.target?.dataset?.packId;
+    if (!field || !packId || !["name", "notes"].includes(field)) {
+      return;
+    }
+
+    captureHistoryGroup(`identity-pack:${packId}:${field}`);
+    const nextIdentityPacks = getIdentityPacks().map((pack) => {
+      if (pack.id !== packId) {
+        return pack;
+      }
+
+      return {
+        ...pack,
+        [field]: event.target.value
+      };
+    });
+    updateIdentityPacks(nextIdentityPacks, {
+      renderList: false,
+      renderPanels: false
+    });
+  }
+
+  function handleIdentityPackListChange(event) {
+    const packId = event.target?.dataset?.packId;
+    if (!packId) {
+      return;
+    }
+
+    if (event.target.matches("[data-pack-field='entityType'], [data-pack-field='componentType']")) {
+      pushHistoryState();
+      const field = event.target.dataset.packField;
+      const nextValue = field === "entityType"
+        ? sanitizeIdentityEntityType(event.target.value)
+        : sanitizeIdentityComponentType(event.target.value);
+      const nextIdentityPacks = getIdentityPacks().map((pack) => {
+        if (pack.id !== packId) {
+          return pack;
+        }
+
+        return {
+          ...pack,
+          [field]: nextValue
+        };
+      });
+      updateIdentityPacks(nextIdentityPacks, {
+        announceText: "Identity Pack 구성을 업데이트했습니다."
+      });
+      updateHistoryUI();
+      return;
+    }
+
+    if (event.target.matches("[data-pack-reference-id]")) {
+      const referenceImageId = event.target.dataset.packReferenceId;
+      pushHistoryState();
+      const nextIdentityPacks = getIdentityPacks().map((pack) => {
+        if (pack.id !== packId) {
+          return pack;
+        }
+
+        const nextReferenceImageIds = event.target.checked
+          ? Array.from(new Set([...normalizeReferenceImageIds(pack.referenceImageIds), referenceImageId]))
+          : normalizeReferenceImageIds(pack.referenceImageIds).filter((value) => value !== referenceImageId);
+
+        return {
+          ...pack,
+          referenceImageIds: nextReferenceImageIds
+        };
+      });
+      updateIdentityPacks(nextIdentityPacks, {
+        announceText: "Identity Pack 시트를 업데이트했습니다."
+      });
+      updateHistoryUI();
+    }
+  }
+
+  function handleIdentityPackListBlur(event) {
+    const field = event.target?.dataset?.packField;
+    const packId = event.target?.dataset?.packId;
+    if (!field || !packId || !["name", "notes"].includes(field)) {
+      return;
+    }
+
+    releaseHistoryGroup(`identity-pack:${packId}:${field}`);
+    renderIdentityPackList();
+    renderPanels();
+  }
+
+  function handleSelectionDetailChange(event) {
+    const packId = event.target?.dataset?.selectionPackToggle;
+    if (!packId) {
+      return;
+    }
+
+    const selectedPanel = getSingleSelectedPanel();
+    if (!selectedPanel) {
+      return;
+    }
+
+    const nextIdentityPackIds = event.target.checked
+      ? Array.from(new Set([...getPanelIdentityPackIds(selectedPanel), packId]))
+      : getPanelIdentityPackIds(selectedPanel).filter((identityPackId) => identityPackId !== packId);
+
+    pushHistoryState();
+    updatePanel(selectedPanel.id, {
+      identityPackIds: nextIdentityPackIds
+    }, { announce: false });
+    renderIdentityPackList();
+    updateHistoryUI();
+    setStatus(event.target.checked ? "선택 컷에 Identity Pack을 연결했습니다." : "선택 컷에서 Identity Pack 연결을 해제했습니다.");
   }
 
   function getReferenceUsageMap() {
@@ -4376,6 +5025,15 @@
     return selectedPanels.map((panel) => ({
       imagePromptMode: getPromptMode(panel),
       i2iPrompt: getPromptMode(panel) === "i2i" ? (panel.t2iPrompt || "") : "",
+      identityPackIds: getPanelIdentityPackIds(panel),
+      identityPacks: getPanelIdentityPacks(panel).map((pack) => ({
+        id: pack.id,
+        name: pack.name,
+        entityType: pack.entityType,
+        componentType: pack.componentType,
+        notes: pack.notes,
+        referenceImageIds: [...pack.referenceImageIds]
+      })),
       referenceImageIds: getPanelReferenceImageIds(panel),
       referenceImageNames: getPanelReferenceImageNames(panel),
       panelId: panel.id,
@@ -4441,6 +5099,7 @@
         const promptSeed = [
           sceneTitle,
           caption,
+          ...getPanelIdentityPacks(panel).map((pack) => `identity pack ${buildIdentityPackPromptSummary(pack)}`),
           ...getPanelReferenceImageNames(panel).map((referenceName) => `reference ${referenceName}`),
           payload?.brief || ""
         ].filter(Boolean).join(", ");

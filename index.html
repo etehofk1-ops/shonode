@@ -172,6 +172,21 @@
               <div id="aiReferenceList" class="ai-reference-list" hidden></div>
             </div>
 
+            <section class="identity-pack-shell" aria-labelledby="identityPackHeading">
+              <div class="identity-pack-toolbar">
+                <div>
+                  <span class="sidebar-label">Identity Pack</span>
+                  <h3 id="identityPackHeading" class="identity-pack-heading">주체와 시트를 묶는 기준</h3>
+                </div>
+                <button id="createIdentityPackButton" class="secondary-button identity-pack-create-button" type="button">팩 추가</button>
+              </div>
+              <p class="identity-pack-copy">
+                사람, 제품, 소품, 공간을 기준으로 시트를 묶고 컷마다 연결하세요.
+                같은 레퍼런스를 인물 기본 시트, 의상 디테일, 소재 시트처럼 다시 구조화할 수 있습니다.
+              </p>
+              <div id="identityPackList" class="identity-pack-list"></div>
+            </section>
+
             <div class="sidebar-grid sidebar-grid--ai">
               <label class="sidebar-field">
                 <span class="sidebar-label">모델 메모</span>
@@ -799,6 +814,7 @@
               </div>
               </div>
             </div>
+            <div class="identity-pack-chip-list" data-identity-pack-chip-list hidden></div>
             <textarea class="prompt-input t2i-prompt-input" rows="7" placeholder="이 컷용 이미지 프롬프트가 여기에 들어옵니다."></textarea>
           </div>
           <p class="prompt-collapsed-preview" hidden></p>
