@@ -280,6 +280,72 @@
                 </label>
               </div>
 
+              <section class="guided-template-shell" aria-labelledby="pipelineGuidedHeading">
+                <div class="guided-template-header">
+                  <div>
+                    <p class="sidebar-label">Guided Mode</p>
+                    <h4 id="pipelineGuidedHeading" class="guided-template-title">??? ??? ??</h4>
+                  </div>
+                  <button
+                    class="secondary-button guided-template-action"
+                    type="button"
+                    data-guided-apply="packs"
+                  >?? ? ???</button>
+                </div>
+
+                <p id="pipelineTemplateSummary" class="guided-template-copy">
+                  ???? ??? ?? ??? ?? ??? ?? ??? ????? ?? ? ????.
+                </p>
+
+                <div class="pipeline-lab-grid">
+                  <label class="sidebar-field">
+                    <span class="sidebar-label">??? ???</span>
+                    <select id="pipelineTemplateInput" class="sidebar-input sidebar-select"></select>
+                  </label>
+
+                  <label class="sidebar-field">
+                    <span class="sidebar-label">?? ??</span>
+                    <select id="pipelineDurationInput" class="sidebar-input sidebar-select"></select>
+                  </label>
+                </div>
+
+                <div class="guided-template-grid">
+                  <article class="pipeline-stage-card guided-stage-card">
+                    <div class="pipeline-stage-header">
+                      <div>
+                        <span class="pipeline-stage-index">Guide A</span>
+                        <strong class="pipeline-stage-title">?? ? ??</strong>
+                      </div>
+                      <button
+                        class="ghost-button pipeline-copy-button"
+                        type="button"
+                        data-copy-target="pipelineGuidedSheetOutput"
+                        data-copy-label="Guided sheet packs"
+                      >??</button>
+                    </div>
+                    <p class="pipeline-stage-copy">??? ????? ??? ?? ?? ?????. Identity Pack ??? ? ???? ???? ?? ? ? ????.</p>
+                    <textarea id="pipelineGuidedSheetOutput" class="pipeline-output pipeline-output--compact" rows="10" readonly></textarea>
+                  </article>
+
+                  <article class="pipeline-stage-card guided-stage-card">
+                    <div class="pipeline-stage-header">
+                      <div>
+                        <span class="pipeline-stage-index">Guide B</span>
+                        <strong class="pipeline-stage-title">?? ?? ??</strong>
+                      </div>
+                      <button
+                        class="ghost-button pipeline-copy-button"
+                        type="button"
+                        data-copy-target="pipelineGuidedBeatOutput"
+                        data-copy-label="Guided beat plan"
+                      >??</button>
+                    </div>
+                    <p class="pipeline-stage-copy">??? ???? ?? ? ??, ???, ?? ??? ?? ???? ?? ?????.</p>
+                    <textarea id="pipelineGuidedBeatOutput" class="pipeline-output pipeline-output--compact" rows="10" readonly></textarea>
+                  </article>
+                </div>
+              </section>
+
               <div class="pipeline-stage-list">
                 <article class="pipeline-stage-card">
                   <div class="pipeline-stage-header">
@@ -312,7 +378,7 @@
                   <div class="pipeline-stage-header">
                     <div>
                       <span class="pipeline-stage-index">Step 3</span>
-                      <strong class="pipeline-stage-title">표정 시트 9그리드</strong>
+                      <strong class="pipeline-stage-title">?? ?? <span id="pipelineStep3ModeLabel" class="pipeline-stage-mode">Expression</span></strong>
                     </div>
                     <button class="ghost-button pipeline-copy-button" type="button" data-copy-target="pipelineStep3Output" data-copy-label="Step 3 expression sheet">복사</button>
                   </div>
@@ -1002,6 +1068,7 @@
 
   <script src="ai-client.js"></script>
   <script src="script.js"></script>
+  <script src="guided-template-engine.js"></script>
   <script src="shotboard-ai.js"></script>
 </body>
 </html>

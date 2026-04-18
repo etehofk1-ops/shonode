@@ -46,8 +46,14 @@
   const pipelineGoalInputEl = document.getElementById("pipelineGoalInput");
   const pipelineIdeationModeInputEl = document.getElementById("pipelineIdeationModeInput");
   const pipelineVideoModeInputEl = document.getElementById("pipelineVideoModeInput");
+  const pipelineTemplateInputEl = document.getElementById("pipelineTemplateInput");
+  const pipelineDurationInputEl = document.getElementById("pipelineDurationInput");
+  const pipelineTemplateSummaryEl = document.getElementById("pipelineTemplateSummary");
+  const pipelineGuidedSheetOutputEl = document.getElementById("pipelineGuidedSheetOutput");
+  const pipelineGuidedBeatOutputEl = document.getElementById("pipelineGuidedBeatOutput");
   const pipelineStep4ModeLabelEl = document.getElementById("pipelineStep4ModeLabel");
   const pipelineStep5ModeLabelEl = document.getElementById("pipelineStep5ModeLabel");
+  const pipelineStep3ModeLabelEl = document.getElementById("pipelineStep3ModeLabel");
   const pipelineStep1OutputEl = document.getElementById("pipelineStep1Output");
   const pipelineStep2OutputEl = document.getElementById("pipelineStep2Output");
   const pipelineStep3OutputEl = document.getElementById("pipelineStep3Output");
@@ -137,6 +143,7 @@
   let workspaceLibrarySyncPromise = Promise.resolve();
   let workspaceImportInFlight = false;
   let onboardingLastActiveElement = null;
+  let latestGuidedTemplateBlueprint = null;
 
   getDefaultProject = function overrideDefaultProject() {
     return {
@@ -152,6 +159,8 @@
       pipelineGoal: "",
       pipelineIdeationMode: "i2t",
       pipelineVideoMode: "start-end",
+      pipelineTemplateId: getDefaultPipelineTemplateId(),
+      pipelineDurationSec: 15,
       identityPacks: []
     };
   };
@@ -171,6 +180,8 @@
       pipelineGoal: typeof candidate?.pipelineGoal === "string" ? candidate.pipelineGoal : "",
       pipelineIdeationMode: sanitizePipelineIdeationMode(candidate?.pipelineIdeationMode),
       pipelineVideoMode: sanitizePipelineVideoMode(candidate?.pipelineVideoMode),
+      pipelineTemplateId: sanitizePipelineTemplateId(candidate?.pipelineTemplateId),
+      pipelineDurationSec: sanitizePipelineDurationSec(candidate?.pipelineDurationSec),
       identityPacks: normalizeIdentityPacks(candidate?.identityPacks)
     };
   };
@@ -189,6 +200,8 @@
       pipelineGoal: projectValue.pipelineGoal ?? "",
       pipelineIdeationMode: sanitizePipelineIdeationMode(projectValue.pipelineIdeationMode),
       pipelineVideoMode: sanitizePipelineVideoMode(projectValue.pipelineVideoMode),
+      pipelineTemplateId: sanitizePipelineTemplateId(projectValue.pipelineTemplateId),
+      pipelineDurationSec: sanitizePipelineDurationSec(projectValue.pipelineDurationSec),
       identityPacks: normalizeIdentityPacks(projectValue.identityPacks).map((pack) => ({
         ...pack,
         referenceImageIds: [...pack.referenceImageIds]
@@ -298,6 +311,7 @@
     if (pipelineVideoModeInputEl) {
       pipelineVideoModeInputEl.value = sanitizePipelineVideoMode(project.pipelineVideoMode);
     }
+    renderGuidedTemplateControls(buildPipelineContext());
     renderWorkspaceLibrary();
     renderAiReferenceImages();
     renderIdentityPackList();
@@ -724,6 +738,8 @@
   bindProjectField(pipelineGoalInputEl, "pipelineGoal");
   bindProjectField(pipelineIdeationModeInputEl, "pipelineIdeationMode");
   bindProjectField(pipelineVideoModeInputEl, "pipelineVideoMode");
+  bindProjectField(pipelineTemplateInputEl, "pipelineTemplateId");
+  bindProjectField(pipelineDurationInputEl, "pipelineDurationSec");
 
   generatePlanButtonEl.addEventListener("click", handleGeneratePlan);
   regenerateSelectionButtonEl?.addEventListener("click", handleRegenerateSelectedPanels);
@@ -747,6 +763,12 @@
     const applyButton = event.target.closest("[data-pipeline-apply]");
     if (applyButton) {
       applyPipelineStepToSelected(applyButton.dataset.pipelineApply);
+      return;
+    }
+
+    const guidedButton = event.target.closest("[data-guided-apply]");
+    if (guidedButton) {
+      handleGuidedPipelineAction(guidedButton.dataset.guidedApply);
     }
   });
   togglePreviewButtonEl?.addEventListener("click", () => {
@@ -806,7 +828,11 @@
             ? sanitizePipelineIdeationMode(element.value)
             : fieldName === "pipelineVideoMode"
               ? sanitizePipelineVideoMode(element.value)
-              : element.value;
+              : fieldName === "pipelineTemplateId"
+                ? sanitizePipelineTemplateId(element.value)
+                : fieldName === "pipelineDurationSec"
+                  ? sanitizePipelineDurationSec(element.value)
+                  : element.value;
       updateProject({ [fieldName]: nextValue }, { announce: false });
       if (fieldName === "previewVideoUrl" || fieldName === "previewPosterUrl") {
         renderPreviewVideo();
@@ -975,6 +1001,150 @@
   function sanitizePipelineVideoMode(value) {
     return value === "omni" ? "omni" : "start-end";
   }
+  function getGuidedTemplateEngine() {
+    return window.ShonodeGuidedTemplateEngine || null;
+  }
+
+  function getDefaultPipelineTemplateId() {
+    const engine = getGuidedTemplateEngine();
+    return typeof engine?.DEFAULT_TEMPLATE_ID === "string" ? engine.DEFAULT_TEMPLATE_ID : "fashion_editorial";
+  }
+
+  function sanitizePipelineTemplateId(value) {
+    const engine = getGuidedTemplateEngine();
+    return engine && typeof engine.sanitizeTemplateId === "function"
+      ? engine.sanitizeTemplateId(value)
+      : getDefaultPipelineTemplateId();
+  }
+
+  function sanitizePipelineDurationSec(value) {
+    const engine = getGuidedTemplateEngine();
+    return engine && typeof engine.sanitizeDuration === "function"
+      ? engine.sanitizeDuration(value)
+      : 15;
+  }
+
+  function buildGuidedTemplateBlueprint(context = buildPipelineContext()) {
+    const engine = getGuidedTemplateEngine();
+    if (!engine || typeof engine.buildBlueprint !== "function") {
+      return null;
+    }
+
+    return engine.buildBlueprint({
+      templateId: sanitizePipelineTemplateId(project.pipelineTemplateId),
+      durationSec: sanitizePipelineDurationSec(project.pipelineDurationSec),
+      subject: context?.subject || trimPipelineText(project.pipelineSubject),
+      goal: context?.goal || trimPipelineText(project.pipelineGoal),
+      look: context?.look || trimPipelineText(project.pipelineLook),
+      brief: context?.brief || trimPipelineText(project.aiBrief),
+      referenceGuide: context?.referenceGuide || "",
+      identityPackGuide: context?.identityPackGuide || ""
+    });
+  }
+
+  function renderGuidedTemplateControls(context = buildPipelineContext(), blueprint = null) {
+    const engine = getGuidedTemplateEngine();
+    if (!engine) {
+      if (pipelineTemplateSummaryEl) {
+        pipelineTemplateSummaryEl.textContent = "Guided template engine is not available.";
+      }
+      return null;
+    }
+
+    if (pipelineTemplateInputEl) {
+      const options = Array.isArray(engine.TEMPLATE_OPTIONS) ? engine.TEMPLATE_OPTIONS : [];
+      if (pipelineTemplateInputEl.options.length !== options.length) {
+        pipelineTemplateInputEl.innerHTML = options
+          .map((option) => `<option value="${escapeHtml(option.id)}">${escapeHtml(option.label)}</option>`)
+          .join("");
+      }
+      pipelineTemplateInputEl.value = sanitizePipelineTemplateId(project.pipelineTemplateId);
+    }
+
+    if (pipelineDurationInputEl) {
+      const durations = Array.isArray(engine.DURATION_OPTIONS) ? engine.DURATION_OPTIONS : [15];
+      if (pipelineDurationInputEl.options.length !== durations.length) {
+        pipelineDurationInputEl.innerHTML = durations
+          .map((duration) => `<option value="${duration}">${duration}?</option>`)
+          .join("");
+      }
+      pipelineDurationInputEl.value = String(sanitizePipelineDurationSec(project.pipelineDurationSec));
+    }
+
+    const resolvedBlueprint = blueprint || buildGuidedTemplateBlueprint(context);
+    if (pipelineTemplateSummaryEl) {
+      pipelineTemplateSummaryEl.textContent = resolvedBlueprint
+        ? `${resolvedBlueprint.templateSummary} ${resolvedBlueprint.durationSec}? ???? ?? ? ${resolvedBlueprint.sheetPacks.length}?? ?? ${resolvedBlueprint.beats.length}?? ?????.`
+        : "???? ??? ?? ??? ?? ??? ?? ??? ????? ?? ? ????.";
+    }
+
+    return resolvedBlueprint;
+  }
+
+  function renderGuidedTemplateLab(context = buildPipelineContext()) {
+    const blueprint = renderGuidedTemplateControls(context, buildGuidedTemplateBlueprint(context));
+    latestGuidedTemplateBlueprint = blueprint;
+    if (pipelineGuidedSheetOutputEl) {
+      pipelineGuidedSheetOutputEl.value = blueprint?.sheetOutput || "";
+    }
+    if (pipelineGuidedBeatOutputEl) {
+      pipelineGuidedBeatOutputEl.value = blueprint?.beatOutput || "";
+    }
+    return blueprint;
+  }
+
+  function createGuidedIdentityPacksFromTemplate(context = buildPipelineContext()) {
+    const blueprint = buildGuidedTemplateBlueprint(context);
+    const draftPacks = Array.isArray(blueprint?.sheetPacks) ? blueprint.sheetPacks : [];
+    if (draftPacks.length === 0) {
+      setStatus("??? ?? ?? ?? ? ????.", "warning");
+      return;
+    }
+
+    const existingPacks = getIdentityPacks();
+    const existingKeys = new Set(
+      existingPacks.map((pack) => `${pack.name.toLowerCase()}::${pack.entityType}::${pack.componentType}`)
+    );
+    const nextIdentityPacks = [...existingPacks];
+    let createdCount = 0;
+
+    draftPacks.forEach((draft, index) => {
+      const normalizedPack = normalizeIdentityPack({
+        id: createId(),
+        name: draft.name,
+        entityType: draft.entityType,
+        componentType: draft.componentType,
+        notes: draft.notes,
+        referenceImageIds: []
+      }, nextIdentityPacks.length + index);
+
+      const packKey = `${normalizedPack.name.toLowerCase()}::${normalizedPack.entityType}::${normalizedPack.componentType}`;
+      if (existingKeys.has(packKey)) {
+        return;
+      }
+
+      existingKeys.add(packKey);
+      nextIdentityPacks.push(normalizedPack);
+      createdCount += 1;
+    });
+
+    if (createdCount === 0) {
+      setStatus("? ???? ?? Identity Pack? ?? ?? ????.", "warning");
+      return;
+    }
+
+    pushHistoryState();
+    updateIdentityPacks(nextIdentityPacks, {
+      announceText: `${blueprint.templateLabel} ??? ???? Identity Pack ${createdCount}?? ??????.`
+    });
+    updateHistoryUI();
+  }
+
+  function handleGuidedPipelineAction(action) {
+    if (action === "packs") {
+      createGuidedIdentityPacksFromTemplate();
+    }
+  }
 
   function getPipelineIdeationModeLabel(value) {
     return sanitizePipelineIdeationMode(value) === "i2i" ? "I2I" : "I2T";
@@ -1101,6 +1271,11 @@
   }
 
   function buildStep3Prompt(context) {
+    const guidedBlueprint = latestGuidedTemplateBlueprint || buildGuidedTemplateBlueprint(context);
+    if (guidedBlueprint?.step3PromptLines?.length) {
+      return guidedBlueprint.step3PromptLines.join("\n");
+    }
+
     return [
       `Use the Step 1 master concept image as the identity anchor for ${context.subject}.`,
       "Generate a 3x3 expression sheet with 9 readable variations of the same subject.",
@@ -1200,8 +1375,12 @@
     }
 
     const context = buildPipelineContext(selectedPanels);
+    const guidedBlueprint = renderGuidedTemplateLab(context);
     if (pipelineTargetMetaEl) {
       pipelineTargetMetaEl.textContent = context.targetMeta;
+    }
+    if (pipelineStep3ModeLabelEl) {
+      pipelineStep3ModeLabelEl.textContent = guidedBlueprint?.step3Label || "Expression";
     }
     if (pipelineStep4ModeLabelEl) {
       pipelineStep4ModeLabelEl.textContent = getPipelineIdeationModeLabel(context.ideationMode);
