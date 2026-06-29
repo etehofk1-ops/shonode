@@ -1,0 +1,22 @@
+{
+  "name": "shonode-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP bridge for Shonode .shonode storyboard files — read, export prompt batches (gongnyang / seedance handoff), create projects, merge video results.",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "shonode-mcp-server": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check lib/shonode.js",
+    "smoke": "node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  }
+}

@@ -5106,6 +5106,14 @@
     }
 
     try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      if (isPanelImageManifest(parsed)) {
+        importPanelImageManifest(parsed);
+        return;
+      }
+
       const shouldImport = await openConfirmDialog({
         tone: "danger",
         eyebrow: "프로젝트 가져오기",
@@ -5118,9 +5126,7 @@
         return;
       }
 
-      const text = await file.text();
-      const snapshot = JSON.parse(text);
-      await importWorkspaceSnapshot(snapshot);
+      await importWorkspaceSnapshot(parsed);
     } catch (error) {
       console.warn("Failed to import workspace snapshot.", error);
       setStatus("프로젝트 파일을 불러오지 못했습니다.", "warning");
@@ -5194,10 +5200,90 @@
     applySidebarRailState(false);
     updateHistoryUI();
     renderPanels({ restoreView: true });
+    if (Array.isArray(snapshot?.panelImages) && snapshot.panelImages.length > 0) {
+      importPanelImageManifest({ images: snapshot.panelImages }, { announce: false });
+    }
     window.setTimeout(() => {
       persistViewState();
     }, 120);
     setStatus("프로젝트를 불러왔습니다.");
+  }
+
+  function isPanelImageManifest(value) {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+    if (value.version === "shonode-image-manifest-v1") {
+      return true;
+    }
+    return Array.isArray(value.images) && !Array.isArray(value.panels);
+  }
+
+  // Merge externally generated stills (Codex codex-imagegen) onto existing
+  // panels by cut_id (= panel.id). Non-destructive: only image/fileName/viewMode
+  // are touched. persistPanels() writes localStorage + IndexedDB image storage.
+  function importPanelImageManifest(manifest, options = {}) {
+    const announce = options.announce ?? true;
+    const images = Array.isArray(manifest?.images) ? manifest.images : [];
+    if (images.length === 0) {
+      if (announce) {
+        setStatus("회수할 이미지가 없습니다.", "warning");
+      }
+      return { applied: [], missed: [], skipped: [] };
+    }
+
+    const byId = new Map(panels.map((panel) => [panel.id, panel]));
+    const updates = new Map(); // panelId -> { image, fileName }
+    const missed = [];
+    const skipped = [];
+
+    images.forEach((entry) => {
+      const cutId = typeof entry?.cut_id === "string" ? entry.cut_id : "";
+      const dataUrl = typeof entry?.dataUrl === "string" ? entry.dataUrl : "";
+      if (!cutId || !byId.has(cutId)) {
+        missed.push(cutId || null);
+        return;
+      }
+      if (!/^data:image\//i.test(dataUrl)) {
+        skipped.push(cutId);
+        return;
+      }
+      updates.set(cutId, {
+        image: dataUrl,
+        fileName: typeof entry.fileName === "string" ? entry.fileName : ""
+      });
+    });
+
+    if (updates.size === 0) {
+      if (announce) {
+        setStatus(`스틸을 회수하지 못했습니다. (매칭 안 됨 ${missed.length}건)`, "warning");
+      }
+      return { applied: [], missed, skipped };
+    }
+
+    pushHistoryState();
+    panels = panels.map((panel) => {
+      const update = updates.get(panel.id);
+      if (!update) {
+        return panel;
+      }
+      return {
+        ...panel,
+        image: update.image,
+        fileName: update.fileName || panel.fileName,
+        viewMode: "image"
+      };
+    });
+    persistPanels();
+    renderPanels();
+    updateHistoryUI();
+
+    const applied = Array.from(updates.keys());
+    if (announce) {
+      const suffix = missed.length ? ` (매칭 안 됨 ${missed.length}건)` : "";
+      setStatus(`스틸 ${applied.length}장을 회수했습니다.${suffix}`);
+    }
+    return { applied, missed, skipped };
   }
 
   function buildSelectedPanelsPayload(selectedPanels) {
