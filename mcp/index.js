@@ -11,7 +11,11 @@
  *   - shonode_read_project        : parse a .shonode and return a concise summary
  *   - shonode_export_prompt_batch : .shonode -> Codex handoff jsonl (gpt-image-2 | seedance)
  *   - shonode_create_project      : build a fresh, importable .shonode from a cut list
- *   - shonode_merge_results       : write generated VIDEO filenames back into a .shonode
+ *   - shonode_merge_results       : write generated VIDEO filenames / still-image sidecar
+ *   - shonode_generate_storyboard : brief -> Gemini -> importable .shonode (Layer 2)
+ *
+ * Layer 1 tools never call a model. Layer 2 (generate_storyboard) calls Gemini
+ * TEXT generation only; image/video models stay delegated to Codex.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -29,6 +33,8 @@ import {
   buildImageManifest,
   SHONODE_VERSION,
 } from "./lib/shonode.js";
+import { buildDirectorRequest, mapDirectorResponse, directorResultToSnapshot } from "./lib/director.js";
+import { resolveGeminiKey, callGemini } from "./lib/gemini.js";
 
 const CHARACTER_LIMIT = 25000;
 
@@ -259,6 +265,63 @@ At least one of results/images is required. Returns structured { video:{applied,
       }
 
       return ok(structured);
+    } catch (e) {
+      return fail(e.message);
+    }
+  }
+);
+
+// ---- shonode_generate_storyboard (Layer 2: AI director) ------------------
+server.registerTool(
+  "shonode_generate_storyboard",
+  {
+    title: "Generate Shonode storyboard (AI director)",
+    description: `Turn a short Korean brief into a storyboard plan via Gemini and write an importable .shonode. This is the only tool that calls a model (Gemini TEXT generateContent); image generation is still delegated to Codex. Text brief only (no inline reference images in this version).
+
+Requires a Gemini key: env GEMINI_API_KEY, else the project root .env (same key the app/server use).
+
+Args:
+  - brief (string): the rough Korean concept/brief
+  - title (string, optional): project title (defaults to the model's projectDraft.title)
+  - aspect_ratio (string, optional): project aspect ratio (default "16:9")
+  - tone/runtime/logline/notes/sequence (string, optional): project context fed to the model
+  - model (string, optional): Gemini model (default "gemini-2.5-flash")
+  - out_path (string, optional): if set, writes the .shonode and returns its path
+
+Returns: structured { summary, panelCount, out_path? }. Without out_path the full snapshot JSON is returned as text. Then: export_prompt_batch -> Codex -> merge_results.`,
+    inputSchema: {
+      brief: z.string().min(1).describe("Rough Korean brief / concept"),
+      title: z.string().optional().describe("Project title (default: model's projectDraft.title)"),
+      aspect_ratio: z.string().default("16:9").describe("Project aspect ratio, e.g. '16:9' or '9:16'"),
+      tone: z.string().optional(),
+      runtime: z.string().optional(),
+      logline: z.string().optional(),
+      notes: z.string().optional(),
+      sequence: z.string().optional(),
+      model: z.string().default("gemini-2.5-flash").describe("Gemini model id"),
+      out_path: z.string().optional().describe("Optional path to write the .shonode file"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
+  async ({ brief, title, aspect_ratio, tone, runtime, logline, notes, sequence, model, out_path }) => {
+    try {
+      const apiKey = await resolveGeminiKey();
+      if (!apiKey) {
+        return fail("GEMINI_API_KEY not found. Set it in the MCP server env or the project root .env.");
+      }
+      const ctx = { title, aspectRatio: aspect_ratio, tone, runtime, logline, notes, sequence };
+      const request = buildDirectorRequest(brief, ctx);
+      const geminiJson = await callGemini(model, request, apiKey);
+      const result = mapDirectorResponse(geminiJson);
+      const snapshot = directorResultToSnapshot(result, { title, aspectRatio: aspect_ratio });
+      const structured = { summary: result.summary, panelCount: snapshot.panels.length };
+      if (out_path) {
+        const dest = resolve(out_path);
+        await writeFile(dest, JSON.stringify(snapshot, null, 2), "utf8");
+        structured.out_path = dest;
+        return ok(structured, `Generated ${snapshot.panels.length} cut(s) at ${dest}\n${result.summary}`);
+      }
+      return ok(structured, JSON.stringify(snapshot, null, 2));
     } catch (e) {
       return fail(e.message);
     }
