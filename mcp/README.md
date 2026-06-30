@@ -23,6 +23,12 @@ The MCP does **not** apply 공냥 철칙 (no negatives / 끝 AR / HEX / 6 sectio
 each cut's raw prompt is the *rough input* to Codex's `image-prompt` skill,
 which compiles and validates it (`check_prompt.mjs`).
 
+**Layer 2 (`shonode_generate_storyboard`)** intentionally opens this boundary for
+the *plan* step only: it calls Gemini **text** `generateContent` to turn a brief
+into an importable `.shonode` (projectDraft + cuts). Image/video generation stays
+delegated to Codex. Requires a Gemini key — env `GEMINI_API_KEY`, else the project
+root `.env` (same key the app/server use).
+
 ## Tools
 
 | Tool | What it does | Writes? |
@@ -31,6 +37,7 @@ which compiles and validates it (`check_prompt.mjs`).
 | `shonode_export_prompt_batch` | `.shonode` → Codex handoff jsonl (`gpt-image-2` \| `seedance`) | optional `out_path` |
 | `shonode_create_project` | Build a fresh, import-ready `.shonode` from a cut list | optional `out_path` |
 | `shonode_merge_results` | Write generated **video** filenames into a `.shonode` **and/or** emit a still-image sidecar manifest | yes |
+| `shonode_generate_storyboard` | Brief → Gemini → import-ready `.shonode` (the only model-calling tool; Gemini **text** only) | optional `out_path` |
 
 ### Handoff jsonl (gpt-image-2)
 One line per cut that has a `t2iPrompt`:
