@@ -16,6 +16,11 @@ import {
   SHONODE_VERSION,
   IMAGE_MANIFEST_VERSION,
 } from "../lib/shonode.js";
+import {
+  buildDirectorRequest,
+  mapDirectorResponse,
+  directorResultToSnapshot,
+} from "../lib/director.js";
 
 const dir = await mkdtemp(join(tmpdir(), "shonode-mcp-"));
 const file = join(dir, "demo.shonode");
@@ -132,6 +137,53 @@ try {
     assert.ok(manifest.images[1].dataUrl.startsWith("data:image/png;base64,"));
     assert.equal(manifest.images[1].fileName, "cut2.png");
     assert.deepEqual(manifest.missing, ["nope"]);
+  });
+
+  // 9. director: request shape
+  check("director: request schema + prompt carries brief/context", () => {
+    const req = buildDirectorRequest("커피 광고", { title: "모닝브루", aspectRatio: "9:16", tone: "따뜻한" });
+    assert.equal(req.generationConfig.responseMimeType, "application/json");
+    assert.ok(req.generationConfig.responseJsonSchema.properties.cuts, "schema has cuts");
+    assert.ok(req.generationConfig.responseJsonSchema.properties.projectDraft, "schema has projectDraft");
+    const text = req.contents[0].parts[0].text;
+    assert.ok(text.includes("커피 광고"), "prompt includes brief");
+    assert.ok(text.includes("모닝브루"), "prompt includes project title");
+    assert.ok(text.includes("9:16"), "prompt includes aspectRatio");
+  });
+
+  // 10. director: parse Gemini fixture -> cuts (i2i prompt normalized into t2iPrompt)
+  const directorFixture = {
+    candidates: [{ content: { parts: [{ text: JSON.stringify({
+      summary: "3컷 커피 광고",
+      projectDraft: { title: "모닝브루", sequence: "Scene 01", runtime: "20s", tone: "따뜻한", logline: "아침 한 잔", notes: "느린 줌인" },
+      cuts: [
+        { sceneTitle: "원두", durationLabel: "약 3초", caption: "원두 클로즈업 3초", imagePromptMode: "t2i", i2iPrompt: "", t2iPrompt: "macro coffee beans, warm light", i2vStartPrompt: "still beans", i2vMotionPrompt: "slow push in", i2vEndPrompt: "beans fill frame" },
+        { sceneTitle: "추출", durationLabel: "약 4초", caption: "에스프레소 추출 4초", imagePromptMode: "i2i", i2iPrompt: "espresso extraction, crema", t2iPrompt: "", i2vStartPrompt: "drip start", i2vMotionPrompt: "stream falls", i2vEndPrompt: "cup fills" },
+      ],
+    }) }] } }],
+  };
+  const mapped = mapDirectorResponse(directorFixture);
+  check("director: maps summary/projectDraft/cuts + i2i->t2iPrompt", () => {
+    assert.equal(mapped.summary, "3컷 커피 광고");
+    assert.equal(mapped.projectDraft.title, "모닝브루");
+    assert.equal(mapped.cuts.length, 2);
+    assert.equal(mapped.cuts[0].imagePromptMode, "t2i");
+    assert.ok(mapped.cuts[0].t2iPrompt.includes("macro coffee"));
+    assert.equal(mapped.cuts[1].imagePromptMode, "i2i");
+    assert.equal(mapped.cuts[1].t2iPrompt, "espresso extraction, crema");
+    assert.equal(mapped.cuts[1].i2vMotionPrompt, "stream falls");
+  });
+
+  // 11. director: result -> importable .shonode snapshot
+  const directorSnap = directorResultToSnapshot(mapped, { title: "모닝브루", aspectRatio: "9:16" });
+  check("director: snapshot is importable (.shonode shape)", () => {
+    assert.equal(directorSnap.version, SHONODE_VERSION);
+    assert.equal(directorSnap.panels.length, 2);
+    assert.equal(directorSnap.project.aspectRatio, "9:16");
+    assert.equal(directorSnap.project.title, "모닝브루");
+    assert.equal(directorSnap.panels[0].sceneTitle, "원두");
+    assert.equal(directorSnap.panels[1].t2iPrompt, "espresso extraction, crema");
+    assert.equal(directorSnap.panels[0].imagePromptMode, "t2i");
   });
 
   console.log(`\nOK: ${passed} smoke checks passed`);
