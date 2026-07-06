@@ -14,6 +14,11 @@
   const AI_REFERENCE_IMAGE_LIMIT = 10;
   const IDENTITY_ENTITY_TYPES = ["character", "product", "prop", "space"];
   const IDENTITY_COMPONENT_TYPES = ["base", "outfit", "accessory", "expression", "pose", "material"];
+  const WORKSPACE_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+  const WORKSPACE_IMPORT_MAX_PANELS = 80;
+  const WORKSPACE_IMPORT_MAX_STRING_LENGTH = 5_000;
+  const WORKSPACE_IMPORT_MAX_DATA_URL_LENGTH = 2 * 1024 * 1024;
+  const WORKSPACE_IMPORT_ALLOWED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
   const aiBriefInputEl = document.getElementById("aiBriefInput");
   const aiModelInputEl = document.getElementById("aiModelInput");
@@ -173,8 +178,8 @@
       aiModel: typeof candidate?.aiModel === "string" && candidate.aiModel ? candidate.aiModel : "Gemini 2.5 Flash",
       referenceWeight: sanitizeReferenceWeight(candidate?.referenceWeight),
       aiSummary: typeof candidate?.aiSummary === "string" ? candidate.aiSummary : "",
-      previewVideoUrl: typeof candidate?.previewVideoUrl === "string" ? candidate.previewVideoUrl : "",
-      previewPosterUrl: typeof candidate?.previewPosterUrl === "string" ? candidate.previewPosterUrl : "",
+      previewVideoUrl: sanitizeSafeLocalMediaUrl(candidate?.previewVideoUrl),
+      previewPosterUrl: sanitizeSafeLocalMediaUrl(candidate?.previewPosterUrl),
       pipelineSubject: typeof candidate?.pipelineSubject === "string" ? candidate.pipelineSubject : "",
       pipelineLook: typeof candidate?.pipelineLook === "string" ? candidate.pipelineLook : "",
       pipelineGoal: typeof candidate?.pipelineGoal === "string" ? candidate.pipelineGoal : "",
@@ -3333,8 +3338,8 @@
   }
 
   function renderPreviewVideo() {
-    const videoUrl = (project.previewVideoUrl ?? "").trim();
-    const posterUrl = (project.previewPosterUrl ?? "").trim();
+    const videoUrl = sanitizeSafeLocalMediaUrl(project.previewVideoUrl);
+    const posterUrl = sanitizeSafeLocalMediaUrl(project.previewPosterUrl);
 
     if (!videoUrl) {
       previewVideoEl.removeAttribute("src");
@@ -5114,6 +5119,14 @@
         return;
       }
 
+      // Workspace snapshots are base64-free (.shonode), so the size cap is safe here.
+      // Image manifests are detected above and skip the cap because they legitimately
+      // carry base64 stills.
+      validateWorkspaceImportFile(file);
+      if (text.length > WORKSPACE_IMPORT_MAX_BYTES) {
+        throw new Error("Workspace file is too large.");
+      }
+
       const shouldImport = await openConfirmDialog({
         tone: "danger",
         eyebrow: "프로젝트 가져오기",
@@ -5138,37 +5151,27 @@
   }
 
   async function importWorkspaceSnapshot(snapshot) {
-    const snapshotPanels = Array.isArray(snapshot?.panels) && snapshot.panels.length > 0
-      ? snapshot.panels
+    const safeSnapshot = sanitizeWorkspaceSnapshot(snapshot);
+    const snapshotPanels = safeSnapshot.panels.length > 0
+      ? safeSnapshot.panels
       : createDefaultPanels();
-    const snapshotProject = snapshot?.project && typeof snapshot.project === "object"
-      ? snapshot.project
-      : getDefaultProject();
-    const snapshotReferenceImages = Array.isArray(snapshot?.referenceImages)
-      ? snapshot.referenceImages
-      : Array.isArray(snapshot?.aiReferenceImages)
-        ? snapshot.aiReferenceImages
-        : [];
+    const snapshotProject = safeSnapshot.project;
+    const snapshotReferenceImages = safeSnapshot.referenceImages;
     const safeReferenceImages = snapshotReferenceImages
-      .filter((image) => typeof image?.dataUrl === "string")
       .slice(0, AI_REFERENCE_IMAGE_LIMIT)
       .map((image, index) => ({
-        id: typeof image.id === "string" ? image.id : createId(),
-        name: typeof image.name === "string" ? image.name : `reference-${index + 1}.jpg`,
-        mimeType: typeof image.mimeType === "string" ? image.mimeType : "image/jpeg",
-        width: Number.isFinite(image.width) ? image.width : 0,
-        height: Number.isFinite(image.height) ? image.height : 0,
-        dataUrl: image.dataUrl,
-        accentRgb: typeof image.accentRgb === "string" ? image.accentRgb : ""
+        id: sanitizeImportId(image.id) || createId(),
+        name: sanitizeImportText(image.name, `reference-${index + 1}.jpg`, 160),
+        mimeType: sanitizeImageMimeType(image.mimeType),
+        width: Number.isFinite(image.width) ? clamp(Math.round(image.width), 0, 10000) : 0,
+        height: Number.isFinite(image.height) ? clamp(Math.round(image.height), 0, 10000) : 0,
+        dataUrl: sanitizeImportDataUrl(image.dataUrl),
+        accentRgb: sanitizeImportText(image.accentRgb, "", 32)
       }));
     const hydratedReferenceImages = await ensureReferenceImageAccentColors(safeReferenceImages);
-    const sidebarSnapshot = snapshot?.sidebar && typeof snapshot.sidebar === "object" ? snapshot.sidebar : {};
-    const viewSnapshot = snapshot?.view && typeof snapshot.view === "object" ? snapshot.view : {};
-    const selectionIds = Array.isArray(snapshot?.selection?.panelIds)
-      ? snapshot.selection.panelIds
-      : Array.isArray(snapshot?.selectedPanelIds)
-        ? snapshot.selectedPanelIds
-        : [];
+    const sidebarSnapshot = safeSnapshot.sidebar;
+    const viewSnapshot = safeSnapshot.view;
+    const selectionIds = safeSnapshot.selectionIds;
 
     panels = snapshotPanels.map((panel, index) => normalizePanel(panel, index));
     project = normalizeProject(snapshotProject);
@@ -5284,6 +5287,157 @@
       setStatus(`스틸 ${applied.length}장을 회수했습니다.${suffix}`);
     }
     return { applied, missed, skipped };
+  }
+
+  function validateWorkspaceImportFile(file) {
+    const name = typeof file?.name === "string" ? file.name.toLowerCase() : "";
+    const type = typeof file?.type === "string" ? file.type : "";
+    const isAllowedExtension = name.endsWith(".shonode") || name.endsWith(".json");
+    const isAllowedMime = !type || type === "application/json" || type === "application/x-shonode+json";
+
+    if (!isAllowedExtension || !isAllowedMime) {
+      throw new Error("Unsupported workspace file type.");
+    }
+
+    if (Number.isFinite(file.size) && file.size > WORKSPACE_IMPORT_MAX_BYTES) {
+      throw new Error("Workspace file is too large.");
+    }
+  }
+
+  function sanitizeWorkspaceSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      throw new Error("Workspace snapshot must be an object.");
+    }
+
+    if (typeof snapshot.version === "string" && snapshot.version !== "shonode-workspace-v1") {
+      throw new Error("Unsupported Shonode workspace version.");
+    }
+
+    const rawPanels = Array.isArray(snapshot.panels) ? snapshot.panels : [];
+    if (rawPanels.length > WORKSPACE_IMPORT_MAX_PANELS) {
+      throw new Error("Workspace has too many panels.");
+    }
+
+    const rawReferenceImages = Array.isArray(snapshot.referenceImages)
+      ? snapshot.referenceImages
+      : Array.isArray(snapshot.aiReferenceImages)
+        ? snapshot.aiReferenceImages
+        : [];
+
+    return {
+      panels: rawPanels.map(sanitizeImportPanel),
+      project: sanitizeImportProject(snapshot.project),
+      referenceImages: rawReferenceImages
+        .filter((image) => sanitizeImportDataUrl(image?.dataUrl))
+        .slice(0, AI_REFERENCE_IMAGE_LIMIT),
+      selectionIds: Array.isArray(snapshot?.selection?.panelIds)
+        ? snapshot.selection.panelIds.map(sanitizeImportId).filter(Boolean)
+        : Array.isArray(snapshot?.selectedPanelIds)
+          ? snapshot.selectedPanelIds.map(sanitizeImportId).filter(Boolean)
+          : [],
+      sidebar: snapshot.sidebar && typeof snapshot.sidebar === "object" && !Array.isArray(snapshot.sidebar)
+        ? snapshot.sidebar
+        : {},
+      view: snapshot.view && typeof snapshot.view === "object" && !Array.isArray(snapshot.view)
+        ? snapshot.view
+        : {}
+    };
+  }
+
+  function sanitizeImportPanel(panel, index) {
+    const source = panel && typeof panel === "object" && !Array.isArray(panel) ? panel : {};
+    const fallback = getDefaultPosition(index);
+    return {
+      ...source,
+      id: sanitizeImportId(source.id) || createId(),
+      caption: sanitizeImportText(source.caption),
+      image: sanitizeImportDataUrl(source.image),
+      fileName: sanitizeImportText(source.fileName, "", 160),
+      x: Number.isFinite(source.x) ? clamp(source.x, -100000, 100000) : fallback.x,
+      y: Number.isFinite(source.y) ? clamp(source.y, -100000, 100000) : fallback.y,
+      z: Number.isFinite(source.z) ? clamp(source.z, -100000, 100000) : index + 1,
+      sceneTitle: sanitizeImportText(source.sceneTitle),
+      durationLabel: sanitizeImportText(source.durationLabel, "", 200),
+      i2iPrompt: sanitizeImportText(source.i2iPrompt),
+      t2iPrompt: sanitizeImportText(source.t2iPrompt),
+      i2vStartPrompt: sanitizeImportText(source.i2vStartPrompt),
+      i2vMotionPrompt: sanitizeImportText(source.i2vMotionPrompt),
+      i2vEndPrompt: sanitizeImportText(source.i2vEndPrompt)
+    };
+  }
+
+  function sanitizeImportProject(candidate) {
+    const defaults = getDefaultProject();
+    const source = candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate : {};
+    return {
+      ...source,
+      title: sanitizeImportText(source.title, defaults.title, 200),
+      sequence: sanitizeImportText(source.sequence, defaults.sequence, 200),
+      runtime: sanitizeImportText(source.runtime, defaults.runtime, 200),
+      tone: sanitizeImportText(source.tone, defaults.tone, 500),
+      aspectRatio: sanitizeImportText(source.aspectRatio, defaults.aspectRatio, 40),
+      logline: sanitizeImportText(source.logline, defaults.logline),
+      notes: sanitizeImportText(source.notes, defaults.notes),
+      aiBrief: sanitizeImportText(source.aiBrief, ""),
+      aiModel: sanitizeImportText(source.aiModel, "Gemini 2.5 Flash", 120),
+      aiSummary: sanitizeImportText(source.aiSummary, ""),
+      previewVideoUrl: sanitizeSafeLocalMediaUrl(source.previewVideoUrl),
+      previewPosterUrl: sanitizeSafeLocalMediaUrl(source.previewPosterUrl)
+    };
+  }
+
+  function sanitizeImportText(value, fallback = "", maxLength = WORKSPACE_IMPORT_MAX_STRING_LENGTH) {
+    if (typeof value !== "string") {
+      return fallback;
+    }
+    return value.slice(0, maxLength);
+  }
+
+  function sanitizeImportId(value) {
+    if (typeof value !== "string") {
+      return "";
+    }
+    const trimmed = value.trim();
+    return /^[a-zA-Z0-9._:-]{1,120}$/.test(trimmed) ? trimmed : "";
+  }
+
+  function sanitizeImageMimeType(value) {
+    return WORKSPACE_IMPORT_ALLOWED_IMAGE_MIME_TYPES.has(value) ? value : "image/jpeg";
+  }
+
+  function sanitizeImportDataUrl(value) {
+    if (typeof value !== "string" || value.length > WORKSPACE_IMPORT_MAX_DATA_URL_LENGTH) {
+      return "";
+    }
+
+    const match = value.match(/^data:([^;,]+);base64,[a-zA-Z0-9+/=]+$/);
+    if (!match || !WORKSPACE_IMPORT_ALLOWED_IMAGE_MIME_TYPES.has(match[1])) {
+      return "";
+    }
+
+    return value;
+  }
+
+  function sanitizeSafeLocalMediaUrl(value) {
+    if (typeof value !== "string") {
+      return "";
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length > 2048) {
+      return "";
+    }
+
+    if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) {
+      return trimmed;
+    }
+
+    try {
+      const parsed = new URL(trimmed, window.location.origin);
+      return parsed.origin === window.location.origin ? parsed.href : "";
+    } catch {
+      return "";
+    }
   }
 
   function buildSelectedPanelsPayload(selectedPanels) {

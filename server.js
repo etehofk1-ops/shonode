@@ -2,48 +2,36 @@ const http = require("node:http");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
-const { handleStoryboardProxy, sendJson } = require("./storyboard-proxy");
-const { handleSecurityScan } = require("./security-scan-proxy");
 
-const ROOT_DIR = __dirname;
+const ROOT_DIR = path.resolve(__dirname);
 
 loadEnvFile(path.join(ROOT_DIR, ".env"));
 
-const DEFAULT_PORT = Number.parseInt(process.env.PORT || "4173", 10);
+const { handleStoryboardProxy, sendJson } = require("./storyboard-proxy");
+const { handleSecurityScan } = require("./security-scan-proxy");
 
-const SECURITY_HEADERS = {
-  "Content-Security-Policy": [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: http: https:",
-    "media-src 'self' data: blob: http: https:",
-    "connect-src 'self' https://generativelanguage.googleapis.com",
-    "font-src 'self' data:",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'"
-  ].join("; "),
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
-  "Referrer-Policy": "strict-origin-when-cross-origin",
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY"
-};
+const DEFAULT_PORT = Number.parseInt(process.env.PORT || "4173", 10);
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
-  ".json": "application/json; charset=utf-8",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
-  ".ico": "image/x-icon",
-  ".txt": "text/plain; charset=utf-8"
+  ".ico": "image/x-icon"
 };
+const PUBLIC_EXTENSIONS = new Set(Object.keys(MIME_TYPES));
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "X-Frame-Options": "DENY",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+};
+const SERVER_HOST = process.env.SHONODE_HOST || "127.0.0.1";
 
 const requestHandler = async (request, response) => {
   try {
@@ -84,7 +72,19 @@ listenWithFallback(DEFAULT_PORT, 8);
 
 async function serveStaticFile(requestPath, response, isHeadRequest = false) {
   const pathname = requestPath === "/" ? "/index.html" : requestPath;
-  const safePath = decodeURIComponent(pathname);
+  let safePath;
+  try {
+    safePath = decodeURIComponent(pathname);
+  } catch {
+    sendJson(response, 400, { error: "Invalid request path." });
+    return;
+  }
+
+  if (safePath.includes("\0") || safePath.includes("\\")) {
+    sendJson(response, 404, { error: "File not found." });
+    return;
+  }
+
   const pathSegments = safePath.split("/").filter(Boolean);
 
   if (pathSegments.some((segment) => segment.startsWith("."))) {
@@ -93,8 +93,9 @@ async function serveStaticFile(requestPath, response, isHeadRequest = false) {
   }
 
   const resolvedPath = path.resolve(ROOT_DIR, `.${safePath}`);
+  const relativePath = path.relative(ROOT_DIR, resolvedPath);
 
-  if (!resolvedPath.startsWith(ROOT_DIR)) {
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     sendJson(response, 403, { error: "Forbidden path." });
     return;
   }
@@ -113,7 +114,12 @@ async function serveStaticFile(requestPath, response, isHeadRequest = false) {
   }
 
   const extension = path.extname(resolvedPath).toLowerCase();
-  const contentType = MIME_TYPES[extension] || "application/octet-stream";
+  if (!PUBLIC_EXTENSIONS.has(extension)) {
+    sendJson(response, 404, { error: "File not found." });
+    return;
+  }
+
+  const contentType = MIME_TYPES[extension];
 
   response.statusCode = 200;
   response.setHeader("Content-Type", contentType);
@@ -175,8 +181,11 @@ function listenWithFallback(startPort, retriesLeft) {
     process.exit(1);
   });
 
-  server.listen(startPort, () => {
+  server.listen(startPort, SERVER_HOST, () => {
     process.env.PORT = String(startPort);
-    console.log(`[Shonode] Server running at http://127.0.0.1:${startPort}`);
+    console.log(`[Shonode] Server running at http://${SERVER_HOST}:${startPort}`);
+    if (SERVER_HOST !== "127.0.0.1" && SERVER_HOST !== "localhost") {
+      console.warn("[Shonode] Server is exposed beyond loopback. Only do this on trusted networks.");
+    }
   });
 }
