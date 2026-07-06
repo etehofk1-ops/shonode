@@ -3,12 +3,33 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { handleStoryboardProxy, sendJson } = require("./storyboard-proxy");
+const { handleSecurityScan } = require("./security-scan-proxy");
 
 const ROOT_DIR = __dirname;
 
 loadEnvFile(path.join(ROOT_DIR, ".env"));
 
 const DEFAULT_PORT = Number.parseInt(process.env.PORT || "4173", 10);
+
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: http: https:",
+    "media-src 'self' data: blob: http: https:",
+    "connect-src 'self' https://generativelanguage.googleapis.com",
+    "font-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'"
+  ].join("; "),
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY"
+};
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -26,6 +47,8 @@ const MIME_TYPES = {
 
 const requestHandler = async (request, response) => {
   try {
+    setSecurityHeaders(response);
+
     if (!request.url) {
       sendJson(response, 400, { error: "Missing request URL." });
       return;
@@ -37,6 +60,11 @@ const requestHandler = async (request, response) => {
       await handleStoryboardProxy(request, response, {
         apiKeyHint: "Set GEMINI_API_KEY in .env or the environment."
       });
+      return;
+    }
+
+    if (requestUrl.pathname === "/api/security-scan") {
+      await handleSecurityScan(request, response);
       return;
     }
 
@@ -96,6 +124,12 @@ async function serveStaticFile(requestPath, response, isHeadRequest = false) {
   }
 
   fs.createReadStream(resolvedPath).pipe(response);
+}
+
+function setSecurityHeaders(response) {
+  for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
+    response.setHeader(header, value);
+  }
 }
 
 function loadEnvFile(filePath) {

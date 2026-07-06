@@ -17,3 +17,7 @@ Thumbs.db
 Desktop.ini
 
 .vercel
+
+# Agent / tooling scratch
+.omc/
+.claude/

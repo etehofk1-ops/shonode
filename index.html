@@ -6,6 +6,7 @@
   <title>Shonode | 연출 설계 워크플로</title>
   <link rel="icon" href="brand/shonode-mark.svg">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="octo-workbench.css">
 </head>
 <body>
   <div class="app-shell">
@@ -70,6 +71,24 @@
       <p class="hero-positioning">
         프리비즈와 콘티 설계를 위한 창작 워크플로. 브리프에서 컷 구조, 연결, 프리뷰, 결과물 검토까지 한 화면에서 이어집니다.
       </p>
+      <div class="workflow-start-strip" aria-label="추천 시작 흐름">
+        <button class="workflow-start-chip is-primary" type="button" data-start-workflow="story">
+          <span class="workflow-step">01</span>
+          <span>Story Workbench</span>
+        </button>
+        <button class="workflow-start-chip" type="button" data-start-workflow="ai">
+          <span class="workflow-step">02</span>
+          <span>AI Director</span>
+        </button>
+        <button class="workflow-start-chip" type="button" data-start-workflow="canvas">
+          <span class="workflow-step">03</span>
+          <span>Canvas</span>
+        </button>
+        <button class="workflow-start-chip" type="button" data-start-workflow="review">
+          <span class="workflow-step">04</span>
+          <span>Review</span>
+        </button>
+      </div>
       <p id="statusMessage" class="status-message sr-only" data-tone="neutral">
         준비 완료. 브리프를 넣고 컷 구조와 연출 흐름 초안을 설계해보세요.
       </p>
@@ -1069,6 +1088,8 @@
   <script src="ai-client.js"></script>
   <script src="script.js"></script>
   <script src="guided-template-engine.js"></script>
+  <script src="octo-workbench-state.js"></script>
+  <script src="octo-workbench.js"></script>
   <script src="shotboard-ai.js"></script>
 </body>
 </html>

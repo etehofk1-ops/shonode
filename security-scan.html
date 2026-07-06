@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shonode Security Quick Scan</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f7fb;
+        --panel: rgba(255, 255, 255, 0.92);
+        --panel-strong: #ffffff;
+        --line: rgba(18, 35, 62, 0.12);
+        --line-strong: rgba(18, 35, 62, 0.2);
+        --text: #10203b;
+        --muted: #5d6c85;
+        --accent: #0f7b6c;
+        --accent-strong: #0a6458;
+        --danger: #d14545;
+        --danger-bg: rgba(209, 69, 69, 0.08);
+        --warning: #b36b0d;
+        --warning-bg: rgba(179, 107, 13, 0.09);
+        --low: #3d67b1;
+        --low-bg: rgba(61, 103, 177, 0.08);
+        --info: #5d6c85;
+        --info-bg: rgba(93, 108, 133, 0.1);
+        --shadow: 0 22px 60px rgba(16, 32, 59, 0.12);
+        --radius: 22px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", "Pretendard", "Apple SD Gothic Neo", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(15, 123, 108, 0.12), transparent 28%),
+          radial-gradient(circle at top right, rgba(61, 103, 177, 0.12), transparent 26%),
+          linear-gradient(180deg, #f8fafc 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      .page {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0 64px;
+      }
+
+      .hero,
+      .panel,
+      .finding,
+      .header-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero {
+        padding: 28px;
+        display: grid;
+        gap: 20px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(15, 123, 108, 0.1);
+        color: var(--accent-strong);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(30px, 5vw, 48px);
+        line-height: 1.04;
+      }
+
+      .hero-copy {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.7;
+        color: var(--muted);
+        max-width: 760px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
+        gap: 20px;
+        margin-top: 20px;
+      }
+
+      .panel {
+        padding: 22px;
+      }
+
+      .scan-form {
+        display: grid;
+        gap: 16px;
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field label {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .field input {
+        width: 100%;
+        padding: 14px 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.88);
+        color: var(--text);
+        font: inherit;
+      }
+
+      .field input:focus {
+        outline: 2px solid rgba(15, 123, 108, 0.18);
+        border-color: rgba(15, 123, 108, 0.4);
+      }
+
+      .actions,
+      .quick-links,
+      .stat-grid,
+      .header-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      button {
+        appearance: none;
+        border: none;
+        border-radius: 14px;
+        padding: 13px 16px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 140ms ease, opacity 140ms ease, background 140ms ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+        transform: none;
+      }
+
+      .primary {
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+        color: white;
+      }
+
+      .secondary {
+        background: rgba(16, 32, 59, 0.06);
+        color: var(--text);
+      }
+
+      .helper {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+
+      .helper code,
+      .meta code {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 8px;
+        background: rgba(16, 32, 59, 0.07);
+        color: var(--text);
+      }
+
+      .stat-grid {
+        margin-top: 14px;
+      }
+
+      .stat {
+        flex: 1 1 180px;
+        min-width: 0;
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+      }
+
+      .stat-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .stat-value {
+        display: block;
+        margin-top: 10px;
+        font-size: clamp(24px, 4vw, 38px);
+        font-weight: 800;
+      }
+
+      .meta {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .section-title {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      .status {
+        margin-top: 12px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(61, 103, 177, 0.09);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .status.is-error {
+        background: rgba(209, 69, 69, 0.1);
+        color: #7f2323;
+      }
+
+      .header-grid {
+        margin-top: 20px;
+      }
+
+      .header-card {
+        flex: 1 1 220px;
+        min-width: 0;
+        padding: 18px;
+      }
+
+      .header-card h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+
+      .header-card p,
+      .header-card pre {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .header-card pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
+      .findings {
+        display: grid;
+        gap: 14px;
+        margin-top: 16px;
+      }
+
+      .finding {
+        padding: 20px;
+      }
+
+      .finding-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .severity {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 76px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .severity.high {
+        background: var(--danger-bg);
+        color: var(--danger);
+      }
+
+      .severity.medium {
+        background: var(--warning-bg);
+        color: var(--warning);
+      }
+
+      .severity.low {
+        background: var(--low-bg);
+        color: var(--low);
+      }
+
+      .severity.info {
+        background: var(--info-bg);
+        color: var(--info);
+      }
+
+      .finding h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .finding p {
+        margin: 10px 0 0;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      .finding strong {
+        color: var(--text);
+      }
+
+      .empty {
+        padding: 28px;
+        border: 1px dashed var(--line-strong);
+        border-radius: 18px;
+        text-align: center;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.58);
+      }
+
+      @media (max-width: 880px) {
+        .page {
+          width: min(100vw - 20px, 1120px);
+          padding-top: 20px;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero,
+        .panel {
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <span class="eyebrow">Shonode Security Quick Scan</span>
+        <div>
+          <h1>링크 하나로<br />기본 보안 점검</h1>
+          <p class="hero-copy">
+            이 페이지는 URL 하나를 넣으면 HTTPS, 보안 헤더, 쿠키 속성, CORS, 혼합 콘텐츠, 간단한 CSRF 힌트까지 빠르게 확인하는 패시브 스캐너입니다.
+            브라우저 UI는 한 장짜리지만 실제 점검은 서버에서 수행합니다. 더 깊은 액티브 익스플로잇 검증은 Shannon 같은 도구로 이어갈 수 있게 명령도 함께 보여줍니다.
+          </p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <section class="panel">
+          <h2 class="section-title">스캔 실행</h2>
+          <form id="scanForm" class="scan-form">
+            <div class="field">
+              <label for="targetUrl">대상 URL</label>
+              <input id="targetUrl" name="url" type="url" placeholder="https://example.com" required />
+            </div>
+            <div class="field">
+              <label for="scanToken">스캔 토큰</label>
+              <input id="scanToken" name="token" type="password" placeholder="배포 환경에서만 필요" autocomplete="off" />
+            </div>
+            <div class="actions">
+              <button id="scanButton" class="primary" type="submit">빠른 점검 시작</button>
+              <button id="fillCurrentButton" class="secondary" type="button">현재 앱 넣기</button>
+              <button id="fillProdButton" class="secondary" type="button">배포 링크 넣기</button>
+            </div>
+          </form>
+          <p class="helper">
+            로컬 실행은 기본 허용입니다. 배포 환경에서는 <code>SHONODE_SECURITY_SCAN_TOKEN</code> 을 맞춰야 스캔이 열립니다.
+            외부에서 내부망을 스캔하는 SSRF 문제를 막기 위해, 배포 환경에서는 사설망 대상이 기본 차단됩니다.
+          </p>
+        </section>
+
+        <aside class="panel">
+          <h2 class="section-title">체크 항목</h2>
+          <div class="quick-links">
+            <button class="secondary" type="button" data-sample-url="http://127.0.0.1:4173/">로컬 앱</button>
+            <button class="secondary" type="button" data-sample-url="https://shonode.vercel.app/">Shonode 배포</button>
+            <button class="secondary" type="button" data-sample-url="https://example.com/">예시 도메인</button>
+          </div>
+          <p class="helper">HTTPS 강제, HSTS, CSP, 클릭재킹 방지, nosniff, Referrer-Policy, Permissions-Policy, 쿠키 플래그, wildcard CORS, target=_blank, mixed content, POST 폼의 CSRF 힌트까지 확인합니다.</p>
+          <p class="helper">결과는 패시브 스캔 기준입니다. "취약"으로 단정하기보다 우선순위와 개선 포인트를 빠르게 정리하는 데 초점을 둡니다.</p>
+        </aside>
+      </section>
+
+      <section class="panel" style="margin-top: 20px;">
+        <h2 class="section-title">스캔 결과</h2>
+        <div id="statusBox" class="status">대상 URL을 넣고 점검을 시작하면 여기에 상태와 요약이 표시됩니다.</div>
+        <div id="summaryArea"></div>
+        <div id="findingsArea" class="findings">
+          <div class="empty">아직 스캔을 실행하지 않았습니다.</div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const scanForm = document.getElementById("scanForm");
+      const targetUrlInput = document.getElementById("targetUrl");
+      const scanTokenInput = document.getElementById("scanToken");
+      const scanButton = document.getElementById("scanButton");
+      const fillCurrentButton = document.getElementById("fillCurrentButton");
+      const fillProdButton = document.getElementById("fillProdButton");
+      const statusBox = document.getElementById("statusBox");
+      const summaryArea = document.getElementById("summaryArea");
+      const findingsArea = document.getElementById("findingsArea");
+
+      fillCurrentButton.addEventListener("click", () => {
+        targetUrlInput.value = window.location.origin;
+      });
+
+      fillProdButton.addEventListener("click", () => {
+        targetUrlInput.value = "https://shonode.vercel.app/";
+      });
+
+      document.querySelectorAll("[data-sample-url]").forEach((button) => {
+        button.addEventListener("click", () => {
+          targetUrlInput.value = button.dataset.sampleUrl || "";
+          targetUrlInput.focus();
+        });
+      });
+
+      scanForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const targetUrl = targetUrlInput.value.trim();
+        if (!targetUrl) {
+          renderStatus("스캔할 URL을 먼저 입력해 주세요.", true);
+          return;
+        }
+
+        setBusy(true);
+        renderStatus("보안 점검을 실행하고 있습니다. 응답 헤더와 HTML 패턴을 확인하는 중입니다.");
+        summaryArea.innerHTML = "";
+        findingsArea.innerHTML = "<div class=\"empty\">스캔 중입니다...</div>";
+
+        try {
+          const headers = { "Content-Type": "application/json" };
+          const token = scanTokenInput.value.trim();
+          if (token) {
+            headers["X-Scan-Token"] = token;
+          }
+
+          const response = await fetch("/api/security-scan", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ url: targetUrl })
+          });
+
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.hint ? payload.error + " " + payload.hint : payload.error || "스캔 요청에 실패했습니다.");
+          }
+
+          renderReport(payload);
+        } catch (error) {
+          renderStatus(error.message || "스캔 요청에 실패했습니다.", true);
+          summaryArea.innerHTML = "";
+          findingsArea.innerHTML = "<div class=\"empty\">스캔에 실패했습니다. 배포 환경이면 토큰 설정을 먼저 확인해 주세요.</div>";
+        } finally {
+          setBusy(false);
+        }
+      });
+
+      const queryTarget = new URLSearchParams(window.location.search).get("url");
+      if (queryTarget) {
+        targetUrlInput.value = queryTarget;
+      }
+
+      function setBusy(isBusy) {
+        scanButton.disabled = isBusy;
+        scanButton.textContent = isBusy ? "점검 중..." : "빠른 점검 시작";
+      }
+
+      function renderStatus(message, isError = false) {
+        statusBox.textContent = message;
+        statusBox.classList.toggle("is-error", isError);
+      }
+
+      function renderReport(report) {
+        const summary = report.summary || {};
+        const severities = summary.severities || {};
+        renderStatus(`${report.meta.finalUrl} 응답을 ${report.meta.durationMs}ms 동안 검사했습니다. ${summary.totalFindings || 0}개 이슈를 정리했고, 이 결과는 패시브 스캔 기준입니다.`);
+
+        summaryArea.innerHTML = `
+          <div class="stat-grid">
+            <article class="stat">
+              <span class="stat-label">보안 점수</span>
+              <span class="stat-value">${escapeHtml(String(summary.score ?? "-"))}</span>
+            </article>
+            <article class="stat">
+              <span class="stat-label">총 이슈</span>
+              <span class="stat-value">${escapeHtml(String(summary.totalFindings ?? 0))}</span>
+            </article>
+            <article class="stat">
+              <span class="stat-label">High / Medium / Low</span>
+              <span class="stat-value">${escapeHtml(String(severities.high || 0))} / ${escapeHtml(String(severities.medium || 0))} / ${escapeHtml(String(severities.low || 0))}</span>
+            </article>
+          </div>
+          <div class="meta">
+            <div>입력 URL: <code>${escapeHtml(report.meta.inputUrl || "")}</code></div>
+            <div>최종 URL: <code>${escapeHtml(report.meta.finalUrl || "")}</code></div>
+            <div>응답 상태: <code>${escapeHtml(String(report.meta.status || ""))}</code> · Content-Type: <code>${escapeHtml(report.meta.contentType || "unknown")}</code></div>
+            <div>접근 정책: <code>${report.access && report.access.requesterIsLocal ? "local" : "token-protected"}</code>${report.access && report.access.privateTarget ? ` · private target (${escapeHtml(report.access.privateTargetReason || "detected")})` : ""}</div>
+          </div>
+          <div class="header-grid">
+            <article class="header-card">
+              <h3>Shannon 연동</h3>
+              <p>${escapeHtml(report.shannon && report.shannon.hint ? report.shannon.hint : "Shannon 실행 조건을 확인하지 못했습니다.")}</p>
+              <pre>${escapeHtml(report.shannon && report.shannon.command ? report.shannon.command : "")}</pre>
+            </article>
+            <article class="header-card">
+              <h3>주요 헤더</h3>
+              <pre>${escapeHtml(formatHeaders(report.headers || {}))}</pre>
+            </article>
+          </div>
+        `;
+
+        if (!report.findings || report.findings.length === 0) {
+          findingsArea.innerHTML = "<div class=\"empty\">빠른 점검 기준으로는 눈에 띄는 이슈를 찾지 못했습니다. 그래도 액티브 스캔과 코드 리뷰는 별도로 권장합니다.</div>";
+          return;
+        }
+
+        findingsArea.innerHTML = report.findings.map((finding) => `
+          <article class="finding">
+            <div class="finding-head">
+              <span class="severity ${escapeHtml(finding.severity || "info")}">${escapeHtml(finding.severity || "info")}</span>
+              <h3>${escapeHtml(finding.title || "Untitled finding")}</h3>
+            </div>
+            <p>${escapeHtml(finding.summary || "")}</p>
+            <p><strong>권장 조치:</strong> ${escapeHtml(finding.recommendation || "")}</p>
+            <p><strong>근거:</strong> ${escapeHtml(finding.evidence || "")}</p>
+          </article>
+        `).join("");
+      }
+
+      function formatHeaders(headers) {
+        const preferredOrder = [
+          "strict-transport-security",
+          "content-security-policy",
+          "x-frame-options",
+          "x-content-type-options",
+          "referrer-policy",
+          "permissions-policy",
+          "access-control-allow-origin",
+          "access-control-allow-credentials",
+          "server"
+        ];
+
+        const lines = [];
+        preferredOrder.forEach((key) => {
+          if (headers[key]) {
+            lines.push(`${key}: ${headers[key]}`);
+          }
+        });
+
+        Object.keys(headers).sort().forEach((key) => {
+          if (!preferredOrder.includes(key)) {
+            lines.push(`${key}: ${headers[key]}`);
+          }
+        });
+
+        return lines.length ? lines.join("\n") : "표시할 헤더가 없습니다.";
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+    </script>
+  </body>
+</html>

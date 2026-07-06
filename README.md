@@ -16,7 +16,7 @@ It lets you arrange cuts on a free canvas, connect them like nodes, attach image
 
 ### 1. Create an env file
 
-Copy [.env.example](C:/Users/eteho/Downloads/Shonode/.env.example) to `.env` and set your Gemini key.
+Copy [.env.example](.env.example) to `.env` and set your Gemini key.
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -29,14 +29,14 @@ PORT=4173
 ### 2. Start the local server
 
 ```bash
-cd C:\Users\eteho\Downloads\Shonode
-node server.js
+cd path/to/Shonode
+npm start
 ```
 
-or:
+For a direct Node run:
 
 ```bash
-npm start
+node server.js
 ```
 
 ### 3. Open the app
@@ -45,9 +45,37 @@ npm start
 http://127.0.0.1:4173
 ```
 
+### 4. Open the security quick scan
+
+```text
+http://127.0.0.1:4173/security-scan.html
+```
+
 ### Note
 
-You can still open [index.html](C:/Users/eteho/Downloads/Shonode/index.html) directly for UI-only work, but AI generation is now intended to run through the local proxy server.
+You can still open [index.html](index.html) directly for UI-only work, but AI generation is now intended to run through the local proxy server.
+The security quick scan runs as a server-backed passive audit and is intended for local/dev workflows by default.
+
+## Local Quality Checks
+
+```bash
+npm run check
+npm run smoke
+```
+
+- `npm run check` validates the JavaScript entry points with `node --check`.
+- `npm run smoke` starts the local server on a temporary port, checks the main UI, confirms security headers, verifies Story Workbench assets, and runs the passive security scan.
+
+## Security Quick Scan
+
+The `security-scan.html` page lets you paste a URL and run a lightweight passive security audit.
+
+- Checks HTTPS, HSTS, CSP, clickjacking headers, cookie flags, CORS, mixed content, and simple CSRF hints
+- Allows localhost scans by default for local development
+- Requires `SHONODE_SECURITY_SCAN_TOKEN` on deployed environments before scans are allowed
+- Blocks private-network targets on deployed environments unless `SHONODE_ALLOW_PRIVATE_SECURITY_SCAN=1` is set intentionally
+
+For deeper exploit validation, use the Shannon command shown in the report once Docker and Shannon-compatible credentials are available.
 
 ## Project File Format
 
@@ -71,17 +99,21 @@ Import supports both:
 
 ## Main Files
 
-- [index.html](C:/Users/eteho/Downloads/Shonode/index.html): app structure
-- [style.css](C:/Users/eteho/Downloads/Shonode/style.css): UI styling
-- [script.js](C:/Users/eteho/Downloads/Shonode/script.js): canvas / card interactions
-- [shotboard-ai.js](C:/Users/eteho/Downloads/Shonode/shotboard-ai.js): AI workflow, sidebars, attached images, import/export
-- [ai-client.js](C:/Users/eteho/Downloads/Shonode/ai-client.js): AI request builder / response mapping
-- [brand](C:/Users/eteho/Downloads/Shonode/brand): Shonode brand assets
+- [index.html](index.html): app structure
+- [style.css](style.css): UI styling
+- [script.js](script.js): canvas / card interactions
+- [shotboard-ai.js](shotboard-ai.js): AI workflow, sidebars, attached images, import/export
+- [guided-template-engine.js](guided-template-engine.js): guided storyboard template generation
+- [octo-workbench-state.js](octo-workbench-state.js): Story Workbench local state and board handoff helpers
+- [octo-workbench.js](octo-workbench.js): Story Workbench UI integration
+- [ai-client.js](ai-client.js): AI request builder / response mapping
+- [brand](brand): Shonode brand assets
 
 ## Deployment Note
 
-The prototype now includes a local proxy server in [server.js](C:/Users/eteho/Downloads/Shonode/server.js).
+The prototype now includes a local proxy server in [server.js](server.js).
 For public deployment, keep the Gemini key only in server-side environment variables and do not place it back into client files.
+The local server also sets baseline CSP, frame, referrer, permissions, and content-type security headers.
 
 ## Deployment Workflow
 
