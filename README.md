@@ -93,8 +93,9 @@ Open `http://127.0.0.1:4173/security-scan.html` to paste a URL and run a lightwe
 
 - Checks HTTPS, HSTS, CSP, clickjacking headers, cookie flags, CORS, mixed content, and simple CSRF hints
 - Allows localhost scans by default for local development
-- Requires `SHONODE_SECURITY_SCAN_TOKEN` on deployed environments before scans are allowed
-- Blocks private-network targets on deployed environments unless `SHONODE_ALLOW_PRIVATE_SECURITY_SCAN=1` is set intentionally
+- Disabled on hosted deployments unless `SHONODE_ENABLE_HOSTED_SECURITY_SCAN=true` (it fetches arbitrary URLs, so keep it off for public demos)
+- Requires `SHONODE_SECURITY_SCAN_TOKEN` for any non-local request on deployed environments
+- Follows redirects manually and re-validates every hop; blocks private-network targets unless `SHONODE_ALLOW_PRIVATE_SECURITY_SCAN=1` is set intentionally
 
 ## AI proxy behavior
 
