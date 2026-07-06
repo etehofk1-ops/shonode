@@ -20,6 +20,12 @@
   const WORKSPACE_IMPORT_MAX_DATA_URL_LENGTH = 2 * 1024 * 1024;
   const WORKSPACE_IMPORT_ALLOWED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[ch]));
+  }
+
   const aiBriefInputEl = document.getElementById("aiBriefInput");
   const aiModelInputEl = document.getElementById("aiModelInput");
   const aiCutCountOutputEl = document.getElementById("aiCutCountOutput");
@@ -5723,12 +5729,4 @@
   initializeReferenceInlineInteractions();
   renderAiReferenceImages();
 
-  function escapeHtml(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
 })();
