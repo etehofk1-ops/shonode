@@ -72,7 +72,7 @@ Shonode uses a small server-side proxy for Gemini requests:
 
 The browser client should never contain your Gemini API key. Set `GEMINI_API_KEY` only in a local `.env` file or server-side deployment environment variables.
 
-For public deployments, add your own production controls before sharing widely:
+The hosted Vercel API route is disabled by default. To enable it for your own deployment, set `SHONODE_ENABLE_HOSTED_AI_PROXY=true` server-side and add production controls before sharing widely:
 
 - rate limiting
 - usage monitoring
