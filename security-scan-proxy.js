@@ -5,6 +5,7 @@ const { sendJson } = require("./storyboard-proxy");
 
 const MAX_BODY_BYTES = 16 * 1024;
 const FETCH_TIMEOUT_MS = 12_000;
+const MAX_REDIRECTS = 5;
 const MAX_HTML_CHARS = 500_000;
 const SCAN_USER_AGENT = "Shonode-Security-Scanner/0.1";
 const SEVERITY_RANK = {
@@ -73,7 +74,9 @@ async function handleSecurityScan(request, response) {
   }
 
   try {
-    const report = await runPassiveScan(targetUrl);
+    const report = await runPassiveScan(targetUrl, {
+      blockPrivate: !requesterIsLocal && !allowsPrivateTargets()
+    });
     sendJson(response, 200, {
       ...report,
       access: {
@@ -315,24 +318,64 @@ function allowsPrivateTargets() {
   return process.env.SHONODE_ALLOW_PRIVATE_SECURITY_SCAN === "1";
 }
 
-async function runPassiveScan(targetUrl) {
+async function runPassiveScan(targetUrl, options = {}) {
   const startedAt = Date.now();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const blockPrivate = Boolean(options.blockPrivate);
 
+  // Follow redirects manually so every hop is re-validated. Native redirect:"follow"
+  // would let a public URL bounce to http://169.254.169.254/ or a private IP after the
+  // initial host check, which is a classic SSRF bypass.
+  let currentUrl = targetUrl;
   let upstreamResponse;
-  try {
-    upstreamResponse = await fetch(targetUrl, {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        "user-agent": SCAN_USER_AGENT,
-        accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8"
+  let redirectCount = 0;
+
+  while (true) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let hopResponse;
+    try {
+      hopResponse = await fetch(currentUrl, {
+        method: "GET",
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          "user-agent": SCAN_USER_AGENT,
+          accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8"
+        }
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!isRedirectStatus(hopResponse.status) || !hopResponse.headers.get("location")) {
+      upstreamResponse = hopResponse;
+      break;
+    }
+
+    if (redirectCount >= MAX_REDIRECTS) {
+      throw new Error("Too many redirects while scanning.");
+    }
+    redirectCount += 1;
+
+    let nextUrl;
+    try {
+      nextUrl = new URL(hopResponse.headers.get("location"), currentUrl);
+    } catch {
+      throw new Error("Redirect target is not a valid URL.");
+    }
+
+    if (!["http:", "https:"].includes(nextUrl.protocol)) {
+      throw new Error("Redirect to a non-http(s) target was blocked.");
+    }
+
+    if (blockPrivate) {
+      const hopSafety = await inspectTargetSafety(nextUrl);
+      if (hopSafety.privateTarget) {
+        throw new Error("Redirect to a private-network target was blocked.");
       }
-    });
-  } finally {
-    clearTimeout(timeoutId);
+    }
+
+    currentUrl = nextUrl;
   }
 
   const finalUrl = new URL(upstreamResponse.url || targetUrl.toString());
@@ -368,6 +411,10 @@ async function runPassiveScan(targetUrl) {
     findings,
     headers
   };
+}
+
+function isRedirectStatus(status) {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
 
 function isLikelyHtmlContent(contentType, pathname) {
