@@ -22,7 +22,7 @@ It lets you arrange shots on a freeform canvas, connect them like nodes, attach 
 - No hosted API key
 - No bundled `.env`
 - No private project files
-- No production abuse protection beyond the prototype request validation
+- No hosted AI proxy unless you explicitly opt in
 
 If you deploy Shonode publicly, you are responsible for protecting your own AI API key and usage quota.
 
@@ -42,8 +42,14 @@ Copy `.env.example` to `.env` and set your own Gemini key:
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-2.5-flash
 PORT=4173
+# Optional: bind only to loopback by default. Use 0.0.0.0 only on trusted networks.
+# SHONODE_HOST=127.0.0.1
 # Optional: comma-separated web origins allowed to call /api/storyboard
 # SHONODE_ALLOWED_ORIGINS=https://your-domain.example
+# Optional: tighter or looser per-IP proxy limit for self-hosting
+# SHONODE_RATE_LIMIT_PER_MINUTE=20
+# Optional: comma-separated Gemini model allowlist
+# SHONODE_ALLOWED_GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-flash-lite
 ```
 
 Do not commit `.env` or real API keys.
@@ -72,11 +78,12 @@ Shonode uses a small server-side proxy for Gemini requests:
 
 The browser client should never contain your Gemini API key. Set `GEMINI_API_KEY` only in a local `.env` file or server-side deployment environment variables.
 
-The hosted Vercel API route is disabled by default. To enable it for your own deployment, set `SHONODE_ENABLE_HOSTED_AI_PROXY=true` server-side and add production controls before sharing widely:
+The hosted Vercel API route is disabled by default. To enable it for your own deployment, set `SHONODE_ENABLE_HOSTED_AI_PROXY=true` server-side and keep the other protections in place:
 
-- rate limiting
-- usage monitoring
+- built-in per-IP rate limiting via `SHONODE_RATE_LIMIT_PER_MINUTE`
+- default Gemini model allowlist via `SHONODE_ALLOWED_GEMINI_MODELS`
 - stricter origin allowlist via `SHONODE_ALLOWED_ORIGINS`
+- usage monitoring
 - request logging with secret redaction
 - optional authentication or invite gating
 

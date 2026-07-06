@@ -1,10 +1,14 @@
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GEMINI_API_KEY_ENV = "GEMINI_API_KEY";
-const MAX_BODY_BYTES = 60 * 1024 * 1024;
+const DEFAULT_ALLOWED_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+const MAX_BODY_BYTES = 6 * 1024 * 1024;
 const MAX_CONTENTS = 4;
 const MAX_PARTS_PER_CONTENT = 24;
-const MAX_TEXT_LENGTH = 50_000;
-const MAX_INLINE_DATA_LENGTH = 25 * 1024 * 1024;
+const MAX_TEXT_LENGTH = 20_000;
+const MAX_INLINE_DATA_LENGTH = 2 * 1024 * 1024;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = Number.parseInt(process.env.SHONODE_RATE_LIMIT_PER_MINUTE || "20", 10);
+const rateLimitBuckets = new Map();
 
 async function handleStoryboardProxy(request, response, options = {}) {
   const originPolicy = getOriginPolicy(request, options);
@@ -29,6 +33,16 @@ async function handleStoryboardProxy(request, response, options = {}) {
     return;
   }
 
+  const rateLimitResult = checkRateLimit(getClientAddress(request), options);
+  if (!rateLimitResult.allowed) {
+    response.setHeader("Retry-After", String(rateLimitResult.retryAfterSeconds));
+    sendJson(response, 429, {
+      error: "Rate limit exceeded.",
+      hint: "Wait before sending another storyboard generation request."
+    });
+    return;
+  }
+
   const apiKey = process.env[GEMINI_API_KEY_ENV];
   if (!apiKey) {
     sendJson(response, 500, {
@@ -46,7 +60,15 @@ async function handleStoryboardProxy(request, response, options = {}) {
     return;
   }
 
-  const model = sanitizeModel(body?.model) || DEFAULT_MODEL;
+  const model = normalizeRequestedModel(body?.model);
+  if (!model) {
+    sendJson(response, 400, {
+      error: "Model not allowed.",
+      hint: `Use one of: ${getAllowedModels().join(", ")}.`
+    });
+    return;
+  }
+
   const storyboardRequest = body?.request;
   if (!isValidStoryboardRequest(storyboardRequest)) {
     sendJson(response, 400, {
@@ -240,6 +262,14 @@ function isValidInlineData(inlineData) {
   return Boolean(mimeType.startsWith("image/") && data.length > 0 && data.length <= MAX_INLINE_DATA_LENGTH);
 }
 
+function normalizeRequestedModel(value) {
+  const requestedModel = sanitizeModel(value);
+  const fallbackModel = sanitizeModel(DEFAULT_MODEL) || DEFAULT_ALLOWED_MODELS[0];
+  const model = requestedModel || fallbackModel;
+
+  return getAllowedModels().includes(model) ? model : "";
+}
+
 function sanitizeModel(value) {
   if (typeof value !== "string") {
     return "";
@@ -253,7 +283,74 @@ function sanitizeModel(value) {
   return /^[a-zA-Z0-9._-]+$/.test(trimmed) ? trimmed : "";
 }
 
+function getAllowedModels() {
+  const configured = typeof process.env.SHONODE_ALLOWED_GEMINI_MODELS === "string"
+    ? process.env.SHONODE_ALLOWED_GEMINI_MODELS.split(",").map(sanitizeModel).filter(Boolean)
+    : [];
+
+  return configured.length > 0 ? configured : DEFAULT_ALLOWED_MODELS;
+}
+
+function checkRateLimit(clientKey, options = {}) {
+  const maxRequests = Number.isFinite(options.rateLimitPerMinute)
+    ? options.rateLimitPerMinute
+    : RATE_LIMIT_MAX_REQUESTS;
+  if (!Number.isFinite(maxRequests) || maxRequests <= 0) {
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+
+  const now = Date.now();
+  const windowMs = Number.isFinite(options.rateLimitWindowMs)
+    ? options.rateLimitWindowMs
+    : RATE_LIMIT_WINDOW_MS;
+  const bucketKey = clientKey || "unknown";
+  const bucket = rateLimitBuckets.get(bucketKey);
+  if (!bucket || now >= bucket.resetAt) {
+    rateLimitBuckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
+    pruneRateLimitBuckets(now);
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+
+  if (bucket.count >= maxRequests) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000))
+    };
+  }
+
+  bucket.count += 1;
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+function pruneRateLimitBuckets(now) {
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (now >= bucket.resetAt) {
+      rateLimitBuckets.delete(key);
+    }
+  }
+}
+
+function getClientAddress(request) {
+  if (process.env.VERCEL || process.env.SHONODE_TRUST_PROXY === "true") {
+    const forwardedFor = getHeaderValue(request.headers?.["x-forwarded-for"]);
+    const forwardedAddress = forwardedFor.split(",")[0].trim();
+    if (forwardedAddress) {
+      return forwardedAddress;
+    }
+  }
+
+  return request.socket?.remoteAddress || "unknown";
+}
+
+function setSecurityHeaders(response) {
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+}
+
 function setCorsHeaders(response, allowOrigin) {
+  setSecurityHeaders(response);
   if (allowOrigin) {
     response.setHeader("Access-Control-Allow-Origin", allowOrigin);
     response.setHeader("Vary", "Origin");
@@ -264,6 +361,7 @@ function setCorsHeaders(response, allowOrigin) {
 }
 
 function sendJson(response, statusCode, payload) {
+  setSecurityHeaders(response);
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
